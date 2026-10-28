@@ -287,13 +287,13 @@
         <section id="screen-setup" class="pawa-panel p-5 sm:p-8 animate-pop">
             <div class="text-center mb-6">
                 <span class="inline-block px-4 py-1 rounded-full bg-yellow-400 text-slate-900 font-black text-xs sm:text-sm mb-2 shadow">
-                    全60問プール搭載・AIアダプティブ20問選出
+                    全60問プール搭載・AIアダプティブ出題
                 </span>
                 <h2 class="text-2xl sm:text-3xl font-black text-white text-stroke-dark">
                     あなたの「深淵なる性癖バランス」をプロ野球選手査定！
                 </h2>
                 <p class="text-xs sm:text-sm text-blue-200 mt-1.5">
-                    王道からマニアック・アブノーマルまで網羅した全60問から、あなたの回答傾向に応じてリアルタイムに20問を厳選出題！<br class="hidden sm:inline">
+                    王道からマニアック・アブノーマルまで網羅した全60問から、あなたの回答傾向に応じてリアルタイムに最適な問題を出題！<br class="hidden sm:inline">
                     リアルな能力査定と具体的な守備位置（先発/中継ぎ/抑え・左翼/中堅/右翼など全11種）を完全自動算出します。
                 </p>
             </div>
@@ -311,6 +311,28 @@
                         <button type="button" onclick="setRandomName()" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 border border-blue-400 text-xs sm:text-sm font-bold shrink-0 transition shadow">
                             🎲 ランダム
                         </button>
+                    </div>
+                </div>
+
+                <!-- 投手/野手選択 -->
+                <div>
+                    <label class="block text-sm font-extrabold text-yellow-300 mb-1.5">選手タイプ</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" onclick="selectRole('fielder')" data-role="fielder" class="role-btn py-2 px-1 rounded-lg font-black text-sm border-2 border-yellow-400 bg-blue-600 text-white shadow transition">🏏 野手</button>
+                        <button type="button" onclick="selectRole('pitcher')" data-role="pitcher" class="role-btn py-2 px-1 rounded-lg font-bold text-sm border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">⚾ 投手</button>
+                    </div>
+                </div>
+
+                <!-- 設問数選択 -->
+                <div>
+                    <label class="block text-sm font-extrabold text-yellow-300 mb-1.5 flex items-center justify-between">
+                        <span>設問数</span>
+                        <span class="text-[11px] font-normal text-cyan-300">※問題数が多いほど能力値が高くなります（40問:平均+5 / 60問:平均+10）</span>
+                    </label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" onclick="selectCount(20)" data-count="20" class="count-btn py-2 px-1 rounded-lg font-black text-sm border-2 border-yellow-400 bg-blue-600 text-white shadow transition">20問</button>
+                        <button type="button" onclick="selectCount(40)" data-count="40" class="count-btn py-2 px-1 rounded-lg font-bold text-sm border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">40問</button>
+                        <button type="button" onclick="selectCount(60)" data-count="60" class="count-btn py-2 px-1 rounded-lg font-bold text-sm border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">60問</button>
                     </div>
                 </div>
 
@@ -336,7 +358,7 @@
                         <span>🔍 動的アダプティブ出題＆リアル査定システム（全60問プール）</span>
                     </div>
                     <p class="leading-relaxed">
-                        ・回答するたびにあなたの<strong class="text-white">「性癖バランス波形」をリアルタイム解析</strong>し、全60問のディープな設問プールからあなたに最適な20問を動的に選び出して出題します。<br>
+                        ・回答するたびにあなたの<strong class="text-white">「性癖バランス波形」をリアルタイム解析</strong>し、全60問のディープな設問プールからあなたに最適な問題を動的に選び出して出題します（20・40・60問から選択）。<br>
                         ・能力値はインフレを抑えた<strong class="text-white">本家パワプロ準拠のリアル査定（C〜Eランク基準・長所のみA〜B）</strong>で算出されます。<br>
                         ・守備位置は<strong class="text-white">「先発・中継ぎ・抑え」「捕・一・二・三・遊」「左翼・中堅・右翼」の全11ポジション</strong>から具体的に決定します。
                     </p>
@@ -346,7 +368,7 @@
             <!-- スタートボタン -->
             <div class="mt-7 text-center">
                 <button onclick="startDiagnosis()" class="pawa-btn-yellow px-10 py-4 rounded-full font-black text-xl sm:text-2xl tracking-wider inline-flex items-center gap-3">
-                    <span>⚾ 厳選20問・診断プレイボール！</span>
+                    <span>⚾ 診断プレイボール！</span>
                 </button>
             </div>
         </section>
@@ -662,7 +684,7 @@
 
                     <!-- 選択した性癖一覧チップ -->
                     <div>
-                        <div class="text-[11px] font-bold text-blue-300 mb-1.5">▼ あなたが選択した全20問の性癖ログ：</div>
+                        <div class="text-[11px] font-bold text-blue-300 mb-1.5">▼ あなたが選択した全問の性癖ログ：</div>
                         <div id="resSelectedTags" class="flex flex-wrap gap-1.5">
                             <!-- JSで生成 -->
                         </div>
@@ -1235,9 +1257,16 @@
         // =========================================================================
         // 2. アプリケーション状態管理（動的アダプティブ20問選出対応）
         // =========================================================================
-        const TOTAL_QUESTIONS_TO_ASK = 20;
+        // 全ポジションの出現率を均す補正値（20問基準。設問数に比例して適用）。投手は先発:中継ぎ:抑え≒4:4:1
+        const POS_BIAS = {
+            starter: 7.4, reliever: -3.2, closer: -4.3,
+            catcher: -3.8, first: 3.6, second: -7.4, third: -2.1, short: 4.8,
+            left: 2.4, center: 8.1, right: 11.1
+        };
 
         let appState = {
+            role: 'fielder',          // 'fielder' | 'pitcher'
+            totalQuestions: 20,       // 20 | 40 | 60
             playerName: 'パワプロ',
             selectedHand: '右投右打', // 登録画面で選択された投打（能力や守備位置には一切影響しない）
             selectedQuestions: [],    // 動的に選ばれた設問オブジェクトの配列（最大20問）
@@ -1257,6 +1286,27 @@
             const current = input.value;
             let candidates = RANDOM_NAMES.filter(n => n !== current);
             input.value = candidates[Math.floor(Math.random() * candidates.length)];
+        }
+
+        function setToggleGroup(selector, attr, value) {
+            document.querySelectorAll(selector).forEach(btn => {
+                const base = selector.slice(1);
+                if (btn.getAttribute(attr) === String(value)) {
+                    btn.className = `${base} py-2 px-1 rounded-lg font-black text-sm border-2 border-yellow-400 bg-blue-600 text-white shadow transition`;
+                } else {
+                    btn.className = `${base} py-2 px-1 rounded-lg font-bold text-sm border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition`;
+                }
+            });
+        }
+
+        function selectRole(role) {
+            appState.role = role;
+            setToggleGroup('.role-btn', 'data-role', role);
+        }
+
+        function selectCount(n) {
+            appState.totalQuestions = n;
+            setToggleGroup('.count-btn', 'data-count', n);
         }
 
         function selectHand(handStr) {
@@ -1304,13 +1354,14 @@
             let candidates = [];
             let reasonLabel = '初期プロファイリング出題';
 
-            if (stepIndex < 6) {
+            const qs = appState.totalQuestions / 20;
+            if (stepIndex < 6 * qs) {
                 // 【序盤 1〜6問目】：6大エレメントを1問ずつバランスよくプロファイリング
                 const elemOrder = ['visual', 'gap', 'care', 'lead', 'thrill', 'pure'];
                 const targetElem = elemOrder[stepIndex % elemOrder.length];
                 candidates = unused.filter(q => q.primaryElem === targetElem && q.depth <= 2);
                 reasonLabel = `基礎波形スキャン（${ELEMENT_META[targetElem].label}）`;
-            } else if (stepIndex < 14) {
+            } else if (stepIndex < 14 * qs) {
                 // 【中盤 7〜14問目】：偶数番目は「現在突出している性癖の深掘り」、奇数番目は「2番手・手薄軸によるバランス＆ギャップ検証」
                 if (stepIndex % 2 === 0) {
                     candidates = unused.filter(q => q.primaryElem === topElem && q.depth >= 2);
@@ -1328,7 +1379,7 @@
                 const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
                 const stdDev = Math.sqrt(vals.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / vals.length);
 
-                if (stdDev >= 5.0) {
+                if (stdDev / qs >= 5.0) {
                     // 特化傾向が強い場合：トップ2軸のディープ問題（depth 3優先）
                     candidates = unused.filter(q => (q.primaryElem === topElem || q.primaryElem === secondElem) && q.depth === 3);
                     reasonLabel = `深淵フェチ最終審問（${ELEMENT_META[topElem].label}極限）`;
@@ -1359,6 +1410,7 @@
             appState.answers = [];
             appState.adaptiveReasonLog = [];
             appState.runningElem = { visual: 0, gap: 0, lead: 0, care: 0, thrill: 0, pure: 0 };
+            appState.totalQuestions = Math.min(appState.totalQuestions, MASTER_QUESTION_POOL.length);
 
             // 1問目を動的選出
             const firstQ = pickNextAdaptiveQuestion(0);
@@ -1378,13 +1430,13 @@
         // =========================================================================
         function renderQuizStep() {
             const q = appState.selectedQuestions[appState.currentStep];
-            const total = TOTAL_QUESTIONS_TO_ASK; // 20
+            const total = appState.totalQuestions;
             const stepNum = appState.currentStep + 1;
 
-            // 全20問を1回表〜延長10回裏に対応させる
+            // 2問ごとに1イニング（表裏）として表示
             const inningNum = Math.ceil(stepNum / 2);
             const halfText = stepNum % 2 === 1 ? '表' : '裏';
-            const inningLabel = inningNum === 10 ? `延長10回${halfText}` : `${inningNum}回${halfText}`;
+            const inningLabel = inningNum > 9 ? `延長${inningNum}回${halfText}` : `${inningNum}回${halfText}`;
 
             document.getElementById('quizInningBadge').textContent = `${inningLabel}（${stepNum} / ${total}）`;
             document.getElementById('quizAdaptiveBadge').textContent = `📡 ${appState.adaptiveReasonLog[appState.currentStep] || '動的選出'}`;
@@ -1420,7 +1472,7 @@
         function handleChoice(choiceIdx) {
             appState.answers[appState.currentStep] = choiceIdx;
 
-            if (appState.currentStep + 1 < TOTAL_QUESTIONS_TO_ASK) {
+            if (appState.currentStep + 1 < appState.totalQuestions) {
                 const nextStep = appState.currentStep + 1;
                 // まだ次の設問が選ばれていない場合は、ここまでの回答バランスから動的に選出
                 if (!appState.selectedQuestions[nextStep]) {
@@ -1552,35 +1604,45 @@
 
             // 2. インフレを抑えたリアルなベース変換（平均的な選択で 52〜55 (Dランク) になるよう正規化）
             // 各項目の20問平均素点は約 115〜125 前後
+            // 設問数が増えても素点の平均水準が変わらないよう、20問換算に正規化
+            const qScale = appState.totalQuestions / 20;
+            Object.keys(sumStats).forEach(k => { sumStats[k] /= qScale; });
+            // 設問数ボーナス：20問基準で40問は平均+5、60問は平均+10
+            const countBonus = (appState.totalQuestions - 20) / 4;
+
             const normalizeFieldStat = (rawSum) => {
                 const diffFromAvg = rawSum - 120;
                 return 53 + diffFromAvg * 0.42;
             };
 
             let raw = {
-                meet:  normalizeFieldStat(sumStats.meet),
-                power: normalizeFieldStat(sumStats.power),
-                speed: normalizeFieldStat(sumStats.speed),
-                arm:   normalizeFieldStat(sumStats.arm),
-                field: normalizeFieldStat(sumStats.field),
-                catch: normalizeFieldStat(sumStats.catch),
-                velo:  143 + (sumStats.velo - 40) * 0.48,
-                ctrl:  52 + (sumStats.ctrl - 135) * 0.40,
-                stam:  52 + (sumStats.stam - 130) * 0.42
+                meet:  normalizeFieldStat(sumStats.meet) + countBonus,
+                power: normalizeFieldStat(sumStats.power) + countBonus,
+                speed: normalizeFieldStat(sumStats.speed) + countBonus,
+                arm:   normalizeFieldStat(sumStats.arm) + countBonus,
+                field: normalizeFieldStat(sumStats.field) + countBonus,
+                catch: normalizeFieldStat(sumStats.catch) + countBonus,
+                velo:  143 + (sumStats.velo - 40) * 0.48 + countBonus * 0.6,
+                ctrl:  52 + (sumStats.ctrl - 135) * 0.40 + countBonus,
+                stam:  52 + (sumStats.stam - 130) * 0.42 + countBonus
             };
 
             // 3. 性癖6大エレメントの全体バランス解析（特化度 vs 博愛バランス度 ＆ 相反シナジー）
             const elemEntries = Object.entries(elem).sort((a, b) => b[1] - a[1]);
             const topElemKey = elemEntries[0][0];
             const secondElemKey = elemEntries[1][0];
-            const elemVals = Object.values(elem);
+            // 判定は20問換算の値で行う
+            const elemN = {};
+            Object.keys(elem).forEach(k => { elemN[k] = elem[k] / qScale; });
+            const elemVals = Object.values(elemN);
             const elemMean = elemVals.reduce((a, b) => a + b, 0) / elemVals.length;
             const elemVariance = elemVals.reduce((acc, v) => acc + Math.pow(v - elemMean, 2), 0) / elemVals.length;
-            const elemStdDev = Math.sqrt(elemVariance);
+            // 設問数が増えるほど回答が平均化されるため、20問時と同じ尺度になるよう補正
+            const elemStdDev = Math.sqrt(elemVariance) * Math.sqrt(qScale);
 
-            const hasPureThrillSynergy = (elem.pure >= 16 && elem.thrill >= 16);
-            const hasLeadCareSynergy = (elem.lead >= 15 && elem.care >= 15);
-            const hasDualSynergy = hasPureThrillSynergy || hasLeadCareSynergy || elem.gap >= 25;
+            const hasPureThrillSynergy = (elemN.pure >= 16 && elemN.thrill >= 16);
+            const hasLeadCareSynergy = (elemN.lead >= 15 && elemN.care >= 15);
+            const hasDualSynergy = hasPureThrillSynergy || hasLeadCareSynergy || elemN.gap >= 25;
 
             let balanceType = 'オールラウンド博愛型';
             let balanceShort = '博愛バランス型';
@@ -1637,6 +1699,24 @@
                 balanceReasonText = `6つの性癖エレメントが偏りなく整った「博愛ユーティリティ波形」です。極端な弱点を作らない安定した査定となり、総合力が求められるセンターライン（遊撃・二塁・中堅・先発・捕手）に高い適性が表れました。`;
             }
 
+            // 性癖の偏り（特化度）が強いほど、能力の長所・短所の差を拡大する
+            const spike = Math.max(0, Math.min(1.25, (elemStdDev - 4) / 8));
+            if (spike > 0) {
+                const amp = 1 + 0.8 * spike;
+                const fKeys = ['meet', 'power', 'speed', 'arm', 'field', 'catch'];
+                const fMean = fKeys.reduce((a, k) => a + raw[k], 0) / fKeys.length;
+                fKeys.forEach(k => { raw[k] = fMean + (raw[k] - fMean) * amp; });
+                const topF = fKeys.reduce((a, k) => raw[k] > raw[a] ? k : a, fKeys[0]);
+                raw[topF] += spike * 6;
+                const pBase = { velo: 143, ctrl: 52, stam: 52 };
+                const pAmp = { velo: 1.0, ctrl: 1.0, stam: 1.0 };
+                Object.keys(pBase).forEach(k => {
+                    raw[k] = pBase[k] + (raw[k] - pBase[k]) * (1 + 0.8 * spike * pAmp[k]);
+                });
+                const topP = ['ctrl', 'stam'].reduce((a, k) => (raw[k] - 52) > (raw[a] - 52) ? k : a, 'ctrl');
+                raw[topP] += spike * 6;
+            }
+
             // 4. 能力値のバランス特徴から11ポジションの適性スコアを最終補正
             if (raw.stam >= 64 && raw.ctrl >= 56) posScores.starter += 5;
             if (raw.ctrl >= 61 && raw.stam < 66) posScores.reliever += 5;
@@ -1660,6 +1740,16 @@
             // 微ランダム散布（同じ傾向でも守備位置が固定化しにくくなる）
             Object.keys(posScores).forEach(k => {
                 posScores[k] += Math.random() * 1.6; // 0〜1.6
+                posScores[k] += (POS_BIAS[k] || 0) * Math.sqrt(qScale); // 出現率の偏り補正
+            });
+
+            // 隠し二刀流：性癖が極端に尖っている、または極めて綺麗にバランスしている場合のみ発動
+            const isTwoWay = elemStdDev >= 15.5 || elemStdDev <= 4.5;
+
+            // 登録時に選んだ選手タイプ（投手/野手）側をメインにする（二刀流時も反対側は残す）
+            const roleIsPitcher = appState.role === 'pitcher';
+            Object.keys(posScores).forEach(k => {
+                if (POSITION_META[k].isPitcher !== roleIsPitcher) posScores[k] = isTwoWay ? posScores[k] - 1000 : -1000;
             });
 
             // 11ポジションからメイン守備位置とサブ守備位置を決定
@@ -1668,20 +1758,11 @@
             const topPosScore = sortedPositions[0][1];
             const isMainPitcher = POSITION_META[mainPosKey].isPitcher;
 
-            // 野手ポジションのみ・投手ポジションのみの最高スコアを比較し、ごく稀な「二刀流」判定を行う
             const pitcherKeys = ['starter', 'reliever', 'closer'];
             const fielderKeys = ['catcher', 'first', 'second', 'third', 'short', 'left', 'center', 'right'];
 
             const bestPitcherEntry = sortedPositions.find(([k]) => pitcherKeys.includes(k));
             const bestFielderEntry = sortedPositions.find(([k]) => fielderKeys.includes(k));
-            const maxPitchScore = bestPitcherEntry ? bestPitcherEntry[1] : 0;
-            const maxFieldScore = bestFielderEntry ? bestFielderEntry[1] : 0;
-
-            // 二刀流条件：投手最高適性と野手最高適性の差が1点以内、かつ相反シナジー（hasDualSynergy）を持ち、さらに特定のハッシュ条件を満たすレアケース（約6%未満）
-            const nameSeed = appState.playerName.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-            const answerSeed = appState.answers.reduce((acc, v, i) => acc + (v * (i + 1)), 0);
-            const rareRoll = ((nameSeed + answerSeed) % 12 === 0);
-            const isTwoWay = (Math.abs(maxPitchScore - maxFieldScore) <= 1 && hasDualSynergy) || (Math.abs(maxPitchScore - maxFieldScore) === 0 && rareRoll);
 
             // サブポジション選出（基本はメインと同じ区分のみ。二刀流覚醒時のみ投打横断でサブ適性を付与）
             const subThreshold = (balanceShort === '一点突破特化型') ? 0.74 : 0.62;
@@ -1754,8 +1835,8 @@
             // 7. インフレ防止キャップ処理（野手6項目の平均が 62 (Cランク前半) を超える場合は全体をマイルドに圧縮）
             const fieldKeys = ['meet', 'power', 'speed', 'arm', 'field', 'catch'];
             const currentAvg = fieldKeys.reduce((acc, k) => acc + raw[k], 0) / fieldKeys.length;
-            if (currentAvg > 61) {
-                const excess = currentAvg - 61;
+            if (currentAvg > 61 + countBonus) {
+                const excess = currentAvg - (61 + countBonus);
                 fieldKeys.forEach(k => {
                     raw[k] -= excess * 0.85;
                 });
@@ -1784,7 +1865,7 @@
             }
 
             // 金特（超特殊能力）の決定（インフレ抑制のため厳選1個のみ付与）
-            let goldTokuList = determineGoldToku(finalStats, elem, topElemKey, balanceShort, chosenItems, mainPosKey);
+            let goldTokuList = determineGoldToku(finalStats, elemN, topElemKey, balanceShort, chosenItems, mainPosKey);
 
             // 赤特の付与（リアルなパワプロらしさのため最低1〜2個は必ず付与）
             if (redList.length === 0) {
@@ -1829,7 +1910,7 @@
                 .filter(p => p.rawAdd > 0)
                 .map(p => ({
                     ...p,
-                    level: Math.max(1, Math.min(6, Math.round(p.rawAdd * 0.35)))
+                    level: Math.max(1, Math.min(6, Math.round(p.rawAdd / qScale * 0.35)))
                 }));
 
             if (!isTwoWay && isMainPitcher && activePitches.length < 2) {
@@ -1872,7 +1953,7 @@
             const scoutData = generateScoutCommentary(
                 appState.playerName,
                 finalStats,
-                elem,
+                elemN,
                 topElemKey,
                 secondElemKey,
                 balanceType,
@@ -2084,8 +2165,8 @@
                 ? `\n★さらに投手適性と野手適性が奇跡的な高次元で拮抗したため、極めて稀な『二刀流選手』として特別登録された！上部のタブから野手・投手の両能力を確認できるぞ。`
                 : '';
 
-            const report = `【スカウト全60問プール・動的20問査定レポート】\n` +
-                `リアルタイム波形解析で選び抜かれた20問の結果、あなたの性癖タイプは『${balanceType}』と判定され、最も適性の高い具体的ポジションは「${mainPosInfo.label}」${subPosText}に決定した！${twoWayNote}\n` +
+            const report =             `【スカウト全60問プール・動的${appState.totalQuestions}問査定レポート】\n` +
+                            `リアルタイム波形解析で選び抜かれた${appState.totalQuestions}問の結果、あなたの性癖タイプは『${balanceType}』と判定され、最も適性の高い具体的ポジションは「${mainPosInfo.label}」${subPosText}に決定した！${twoWayNote}\n` +
                 `「${fav1}」や「${favMid}」、さらに深淵領域の「${favLast}」を選び抜いたフェティシズムは能力配分にもリアルに反映されており、最大の武器である${bestStat.label}（${getRankLetter(bestStat.val)}・${bestStat.val}）が光る一方、${weakStat.label}（${getRankLetter(weakStat.val)}・${weakStat.val}）には人間味あふれる隙も見られる。\n` +
                 `性癖バランスから覚醒した超特殊能力『${mainGold.name}』を武器に、プロの舞台で唯一無二の輝きを放つ選手だ。`;
 
@@ -2579,7 +2660,7 @@
             }
 
             const text =
-                `⚾ 実況パワフル性癖スカウト査定結果（全60問プール・動的20問）\n` +
+                `⚾ 実況パワフル性癖スカウト査定結果（全60問プール・動的${appState.totalQuestions}問）\n` +
                 `選手名：${p.name}（#${p.jerseyNum} / ${posMeta.label}${subPosStr} / ${p.hand} / ★${p.starScore}）\n` +
                 `${statLine}\n` +
                 `特殊能力：${tokuNames}\n` +
