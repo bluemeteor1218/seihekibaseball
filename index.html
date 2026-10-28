@@ -1436,12 +1436,18 @@
 
         function prevQuestion() {
             if (appState.currentStep > 0) {
-                // 戻って回答を変えた場合に次の問題が再度リアルタイム選出されるよう、未来の設問キャッシュをクリア
-                while (appState.selectedQuestions.length > appState.currentStep) {
+                // 先に1問戻る
+                appState.currentStep--;
+
+                // 戻った位置より後ろの設問だけ破棄（現在問は残す）
+                while (appState.selectedQuestions.length > appState.currentStep + 1) {
                     const removed = appState.selectedQuestions.pop();
                     if (removed) appState.usedQuestionIds.delete(removed.id);
                 }
-                appState.currentStep--;
+
+                // 回答も未来分を破棄して整合性を保つ
+                appState.answers = appState.answers.slice(0, appState.currentStep + 1);
+
                 renderQuizStep();
             }
         }
