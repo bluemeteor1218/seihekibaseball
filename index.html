@@ -1,78 +1,2581 @@
-<script>
-/* 1) prevQuestion の境界バグ修正 */
-function prevQuestion() {
-    if (appState.currentStep > 0) {
-        // 先に1問戻る
-        appState.currentStep--;
-
-        // 戻った位置より後ろの設問だけ破棄（現在問は残す）
-        while (appState.selectedQuestions.length > appState.currentStep + 1) {
-            const removed = appState.selectedQuestions.pop();
-            if (removed) appState.usedQuestionIds.delete(removed.id);
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>パワフル性癖スカウト - 2択でわかるあなたの野球選手能力</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800;900&family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pawa-blue-dark: #0a1931;
+            --pawa-blue-panel: #152d54;
+            --pawa-blue-header: #1e4582;
+            --pawa-yellow: #ffd000;
+            --pawa-orange: #ff7b00;
         }
 
-        // 回答も未来分を破棄して整合性を保つ
-        appState.answers = appState.answers.slice(0, appState.currentStep + 1);
-
-        renderQuizStep();
-    }
-}
-
-/* 2) コピー処理を Clipboard API 優先に改善（fallbackは維持） */
-async function copyResultText() {
-    const p = appState.generatedPlayer;
-    if (!p) return;
-
-    const s = p.stats;
-    const posMeta = POSITION_META[p.position] || POSITION_META.short;
-    const subPosStr = (p.subPositions && p.subPositions.length > 0)
-        ? `（サブ：${p.subPositions.map(k => POSITION_META[k].label).join('・')}）`
-        : '';
-    const tokuNames = (appState.displayedToku || []).map(t => `【${t.name}】`).join(' ');
-    const tags = p.chosenItems.map(c => c.shortTag).join(' / ');
-
-    let statLine = '';
-    if (p.isTwoWay) {
-        const pitchStr = p.pitches.map(pt => `${pt.name}${pt.level}`).join('・');
-        statLine = `【二刀流】弾道:${p.trajectory} ミ:${getRankLetter(s.meet)}(${s.meet}) パ:${getRankLetter(s.power)}(${s.power}) 走:${getRankLetter(s.speed)}(${s.speed}) 肩:${getRankLetter(s.arm)}(${s.arm}) 守:${getRankLetter(s.field)}(${s.field}) 捕:${getRankLetter(s.catch)}(${s.catch})\n` +
-                   `【投手】球速:${s.velo}km/h コン:${getRankLetter(s.ctrl)}(${s.ctrl}) スタ:${getRankLetter(s.stam)}(${s.stam}) / 変化球:${pitchStr}`;
-    } else if (p.isPitcher) {
-        const pitchStr = p.pitches.map(pt => `${pt.name}${pt.level}`).join('・');
-        statLine = `球速:${s.velo}km/h コン:${getRankLetter(s.ctrl)}(${s.ctrl}) スタ:${getRankLetter(s.stam)}(${s.stam})\n変化球: ${pitchStr} / 魔球:『${p.origPitch.name}』`;
-    } else {
-        statLine = `弾道:${p.trajectory} ミ:${getRankLetter(s.meet)}(${s.meet}) パ:${getRankLetter(s.power)}(${s.power}) 走:${getRankLetter(s.speed)}(${s.speed}) 肩:${getRankLetter(s.arm)}(${s.arm}) 守:${getRankLetter(s.field)}(${s.field}) 捕:${getRankLetter(s.catch)}(${s.catch})`;
-    }
-
-    const text =
-        `⚾ 実況パワフル性癖スカウト査定結果（全60問プール・動的20問）\n` +
-        `選手名：${p.name}（#${p.jerseyNum} / ${posMeta.label}${subPosStr} / ${p.hand} / ★${p.starScore}）\n` +
-        `${statLine}\n` +
-        `特殊能力：${tokuNames}\n` +
-        `選択フェチ（20問）：${tags}\n` +
-        `寸評：${p.scoutData.headline}`;
-
-    try {
-        if (navigator.clipboard && window.isSecureContext) {
-            await navigator.clipboard.writeText(text);
-            showToast('選手データ＆スカウト寸評をコピーしました！');
-            return;
+        body {
+            font-family: 'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif;
+            background: radial-gradient(circle at center, #1b3a6b 0%, #091326 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+            user-select: none;
         }
-        throw new Error('Clipboard API unavailable');
-    } catch (_) {
-        // fallback
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        try {
-            document.execCommand('copy');
-            showToast('選手データ＆スカウト寸評をコピーしました！');
-        } catch (err) {
-            showToast('コピーに失敗しました');
+
+        /* パワプロ風ストライプ背景 */
+        .bg-stripes {
+            background-image: repeating-linear-gradient(
+                -45deg,
+                rgba(255, 255, 255, 0.03),
+                rgba(255, 255, 255, 0.03) 12px,
+                transparent 12px,
+                transparent 24px
+            );
         }
-        document.body.removeChild(textarea);
-    }
-}
-</script>
+
+        /* 立体テキスト縁取り */
+        .text-stroke-dark {
+            text-shadow: 
+                2px 2px 0 #071224,
+                -1px -1px 0 #071224,  
+                1px -1px 0 #071224,
+                -1px 1px 0 #071224,
+                1px 1px 0 #071224,
+                0px 3px 4px rgba(0,0,0,0.6);
+        }
+
+        .text-stroke-gold {
+            text-shadow: 
+                1px 1px 0 #5c3200,
+                -1px -1px 0 #5c3200,  
+                1px -1px 0 #5c3200,
+                -1px 1px 0 #5c3200,
+                0px 2px 3px rgba(0,0,0,0.5);
+        }
+
+        /* パワプロ風パネル枠 */
+        .pawa-panel {
+            background: linear-gradient(180deg, #1b3864 0%, #102342 100%);
+            border: 3px solid #4a7ec7;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6), inset 0 2px 2px rgba(255, 255, 255, 0.25);
+            border-radius: 1rem;
+        }
+
+        .pawa-subpanel {
+            background: rgba(8, 19, 38, 0.75);
+            border: 2px solid #2b508a;
+            border-radius: 0.75rem;
+        }
+
+        /* 能力ランクバッジ S〜G */
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            font-weight: 900;
+            font-size: 1.4rem;
+            border-radius: 0.45rem;
+            border: 2px solid rgba(255,255,255,0.85);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 2px 3px rgba(255,255,255,0.6);
+            line-height: 1;
+            font-style: italic;
+            padding-right: 2px;
+        }
+
+        .rank-S {
+            background: linear-gradient(135deg, #ff7bf0 0%, #d414b4 50%, #7a0bc0 100%);
+            color: #fff3b0;
+            text-shadow: 1px 1px 0 #4a0033, -1px -1px 0 #4a0033, 0 2px 4px rgba(0,0,0,0.7);
+            border-color: #ffe600;
+        }
+        .rank-A {
+            background: linear-gradient(180deg, #ff66b2 0%, #e60073 60%, #99004d 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #660033, -1px -1px 0 #660033;
+        }
+        .rank-B {
+            background: linear-gradient(180deg, #ff5252 0%, #d50000 60%, #7f0000 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #550000, -1px -1px 0 #550000;
+        }
+        .rank-C {
+            background: linear-gradient(180deg, #ffb74d 0%, #f57c00 60%, #bf360c 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #663300, -1px -1px 0 #663300;
+        }
+        .rank-D {
+            background: linear-gradient(180deg, #fff176 0%, #fbc02d 60%, #f57f17 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #5c4300, -1px -1px 0 #5c4300;
+        }
+        .rank-E {
+            background: linear-gradient(180deg, #81c784 0%, #2e7d32 60%, #1b5e20 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #0d3b10, -1px -1px 0 #0d3b10;
+        }
+        .rank-F {
+            background: linear-gradient(180deg, #64b5f6 0%, #1976d2 60%, #0d47a1 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #062657, -1px -1px 0 #062657;
+        }
+        .rank-G {
+            background: linear-gradient(180deg, #bdbdbd 0%, #616161 60%, #212121 100%);
+            color: #ffffff;
+            text-shadow: 1px 1px 0 #111111, -1px -1px 0 #111111;
+        }
+
+        /* 特殊能力パネル */
+        .toku-badge {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.4rem 0.5rem;
+            border-radius: 0.4rem;
+            font-weight: 800;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            text-align: center;
+            min-height: 2.4rem;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+        }
+        .toku-badge:hover, .toku-badge:active {
+            transform: translateY(-2px) scale(1.03);
+            z-index: 20;
+        }
+
+        /* 金特（超特殊能力） */
+        .toku-gold {
+            background: linear-gradient(180deg, #fff59d 0%, #ffc107 35%, #ff8f00 75%, #e65100 100%);
+            border: 2px solid #ffffff;
+            color: #3e1700;
+            text-shadow: 0px 1px 0px rgba(255,255,255,0.8);
+            box-shadow: 0 3px 10px rgba(255, 193, 7, 0.55), inset 0 2px 3px rgba(255,255,255,0.9);
+            font-weight: 900;
+        }
+
+        /* 青特 */
+        .toku-blue {
+            background: linear-gradient(180deg, #80d8ff 0%, #0288d1 50%, #01579b 100%);
+            border: 2px solid #b3e5fc;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px #002f6c;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255,255,255,0.6);
+        }
+
+        /* 赤特 */
+        .toku-red {
+            background: linear-gradient(180deg, #ff8a80 0%, #d32f2f 50%, #8e0000 100%);
+            border: 2px solid #ffcdd2;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px #4a0000;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255,255,255,0.6);
+        }
+
+        /* 青赤混合（特定タイプなど） */
+        .toku-mix {
+            background: linear-gradient(135deg, #0288d1 0%, #0288d1 48%, #d32f2f 52%, #d32f2f 100%);
+            border: 2px solid #e1f5fe;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px #000000;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+        }
+
+        /* 緑特 */
+        .toku-green {
+            background: linear-gradient(180deg, #a5d6a7 0%, #388e3c 50%, #1b5e20 100%);
+            border: 2px solid #c8e6c9;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px #0a300d;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255,255,255,0.6);
+        }
+
+        /* パワプロ風アクションボタン */
+        .pawa-btn-yellow {
+            background: linear-gradient(180deg, #ffee55 0%, #ffbb00 55%, #e68a00 100%);
+            border: 3px solid #ffffff;
+            color: #3b1e00;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.7);
+            box-shadow: 0 5px 0 #8f5200, 0 8px 15px rgba(0,0,0,0.5);
+            transition: all 0.1s ease;
+        }
+        .pawa-btn-yellow:hover {
+            filter: brightness(1.06);
+            transform: translateY(-1px);
+        }
+        .pawa-btn-yellow:active {
+            transform: translateY(4px);
+            box-shadow: 0 1px 0 #8f5200, 0 3px 6px rgba(0,0,0,0.4);
+        }
+
+        /* 2択カード */
+        .choice-card {
+            background: linear-gradient(180deg, #214378 0%, #112647 100%);
+            border: 3px solid #598ee2;
+            box-shadow: 0 6px 0 #09172e, 0 10px 20px rgba(0,0,0,0.5);
+            transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .choice-card:hover {
+            border-color: #ffd000;
+            background: linear-gradient(180deg, #2a5394 0%, #16325c 100%);
+            transform: translateY(-3px) scale(1.01);
+        }
+        .choice-card:active {
+            transform: translateY(4px) scale(0.99);
+            box-shadow: 0 2px 0 #09172e;
+        }
+
+        /* 変化球ブロックゲージ */
+        .pitch-pip {
+            width: 12px;
+            height: 14px;
+            border-radius: 2px;
+            border: 1px solid rgba(0,0,0,0.6);
+        }
+        .pitch-pip-active {
+            background: linear-gradient(180deg, #ffeb3b 0%, #ff9800 100%);
+            box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+        }
+        .pitch-pip-empty {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        /* アニメーション */
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.92) translateY(10px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-pop {
+            animation: popIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+    </style>
+</head>
+<body class="bg-stripes flex flex-col justify-between min-h-screen p-3 sm:p-6">
+
+    <!-- トップヘッダー -->
+    <header class="max-w-4xl w-full mx-auto mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2 sm:gap-3">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-b from-white to-gray-200 border-4 border-red-600 flex items-center justify-center shadow-lg relative overflow-hidden shrink-0">
+                <!-- 野球ボールの縫い目風SVG -->
+                <svg class="w-full h-full text-red-600" viewBox="0 0 100 100" fill="none">
+                    <path d="M22 10 C 42 35, 42 65, 22 90" stroke="currentColor" stroke-width="6" stroke-dasharray="6 4" stroke-linecap="round"/>
+                    <path d="M78 10 C 58 35, 58 65, 78 90" stroke="currentColor" stroke-width="6" stroke-dasharray="6 4" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="text-[10px] sm:text-xs font-extrabold tracking-widest text-yellow-300 uppercase">PAWAFURU FETISH BASEBALL</div>
+                <h1 class="text-xl sm:text-3xl font-black tracking-tight text-white text-stroke-dark">
+                    実況パワフル<span class="text-yellow-400">性癖</span>スカウト
+                </h1>
+            </div>
+        </div>
+        <button id="topResetBtn" onclick="resetToTitle()" class="hidden px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border-2 border-slate-500 text-xs sm:text-sm font-bold text-slate-200 transition shadow">
+            タイトルへ戻る
+        </button>
+    </header>
+
+    <!-- メインコンテナ -->
+    <main class="max-w-4xl w-full mx-auto flex-grow flex flex-col justify-center">
+
+        <!-- ==================== 1. タイトル＆選手登録画面 ==================== -->
+        <section id="screen-setup" class="pawa-panel p-5 sm:p-8 animate-pop">
+            <div class="text-center mb-6">
+                <span class="inline-block px-4 py-1 rounded-full bg-yellow-400 text-slate-900 font-black text-xs sm:text-sm mb-2 shadow">
+                    全60問プール搭載・AIアダプティブ20問選出
+                </span>
+                <h2 class="text-2xl sm:text-3xl font-black text-white text-stroke-dark">
+                    あなたの「深淵なる性癖バランス」をプロ野球選手査定！
+                </h2>
+                <p class="text-xs sm:text-sm text-blue-200 mt-1.5">
+                    王道からマニアック・アブノーマルまで網羅した全60問から、あなたの回答傾向に応じてリアルタイムに20問を厳選出題！<br class="hidden sm:inline">
+                    リアルな能力査定と具体的な守備位置（先発/中継ぎ/抑え・左翼/中堅/右翼など全11種）を完全自動算出します。
+                </p>
+            </div>
+
+            <div class="pawa-subpanel p-5 sm:p-6 space-y-5 max-w-xl mx-auto">
+                <!-- 選手名入力 -->
+                <div>
+                    <label class="block text-sm font-extrabold text-yellow-300 mb-1.5 flex items-center justify-between">
+                        <span>登録選手名（ニックネーム）</span>
+                        <span class="text-xs font-normal text-blue-300">※空欄時は自動命名</span>
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="text" id="inputName" maxlength="10" placeholder="パワプロ" value="パワプロ"
+                            class="w-full px-4 py-2.5 rounded-lg bg-slate-900/90 border-2 border-blue-400 text-white font-black text-lg focus:outline-none focus:border-yellow-400">
+                        <button type="button" onclick="setRandomName()" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 border border-blue-400 text-xs sm:text-sm font-bold shrink-0 transition shadow">
+                            🎲 ランダム
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 投打選択（能力・ポジションには一切影響しないプロフィール設定） -->
+                <div>
+                    <label class="block text-sm font-extrabold text-yellow-300 mb-1.5 flex items-center justify-between">
+                        <span>投打設定（プロフィール用）</span>
+                        <span class="text-[11px] font-normal text-cyan-300">※選手能力や守備位置の査定には一切影響しません</span>
+                    </label>
+                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-2" id="handSelectGroup">
+                        <button type="button" onclick="selectHand('右投右打')" data-hand="右投右打" class="hand-btn py-2 px-1 rounded-lg font-black text-xs border-2 border-yellow-400 bg-blue-600 text-white shadow transition">右投右打</button>
+                        <button type="button" onclick="selectHand('右投左打')" data-hand="右投左打" class="hand-btn py-2 px-1 rounded-lg font-bold text-xs border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">右投左打</button>
+                        <button type="button" onclick="selectHand('右投両打')" data-hand="右投両打" class="hand-btn py-2 px-1 rounded-lg font-bold text-xs border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">右投両打</button>
+                        <button type="button" onclick="selectHand('左投左打')" data-hand="左投左打" class="hand-btn py-2 px-1 rounded-lg font-bold text-xs border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">左投左打</button>
+                        <button type="button" onclick="selectHand('左投右打')" data-hand="左投右打" class="hand-btn py-2 px-1 rounded-lg font-bold text-xs border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">左投右打</button>
+                        <button type="button" onclick="selectHand('左投両打')" data-hand="左投両打" class="hand-btn py-2 px-1 rounded-lg font-bold text-xs border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition">左投両打</button>
+                    </div>
+                </div>
+
+                <!-- 自動査定の説明パネル -->
+                <div class="bg-slate-900/80 border border-blue-500/40 rounded-xl p-3.5 text-xs text-blue-100 space-y-1.5">
+                    <div class="font-black text-yellow-300 flex items-center gap-1.5">
+                        <span>🔍 動的アダプティブ出題＆リアル査定システム（全60問プール）</span>
+                    </div>
+                    <p class="leading-relaxed">
+                        ・回答するたびにあなたの<strong class="text-white">「性癖バランス波形」をリアルタイム解析</strong>し、全60問のディープな設問プールからあなたに最適な20問を動的に選び出して出題します。<br>
+                        ・能力値はインフレを抑えた<strong class="text-white">本家パワプロ準拠のリアル査定（C〜Eランク基準・長所のみA〜B）</strong>で算出されます。<br>
+                        ・守備位置は<strong class="text-white">「先発・中継ぎ・抑え」「捕・一・二・三・遊」「左翼・中堅・右翼」の全11ポジション</strong>から具体的に決定します。
+                    </p>
+                </div>
+            </div>
+
+            <!-- スタートボタン -->
+            <div class="mt-7 text-center">
+                <button onclick="startDiagnosis()" class="pawa-btn-yellow px-10 py-4 rounded-full font-black text-xl sm:text-2xl tracking-wider inline-flex items-center gap-3">
+                    <span>⚾ 厳選20問・診断プレイボール！</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- ==================== 2. 2択性癖診断画面（完全マスク仕様） ==================== -->
+        <section id="screen-quiz" class="hidden pawa-panel p-5 sm:p-8">
+            <!-- 進捗ヘッダー -->
+            <div class="mb-5">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div class="flex items-center gap-2">
+                        <span id="quizInningBadge" class="px-3 py-1 rounded-md bg-yellow-400 text-slate-950 font-black text-xs sm:text-sm shadow">
+                            1回表（1 / 20）
+                        </span>
+                        <span id="quizAdaptiveBadge" class="px-2.5 py-0.5 rounded bg-indigo-900/90 border border-indigo-400/60 text-[11px] font-bold text-indigo-200">
+                            初期プロファイリング出題
+                        </span>
+                    </div>
+                    <span id="quizThemeBadge" class="text-xs sm:text-sm font-bold text-blue-200">
+                        カテゴリー：脚線美・衣装フェチ
+                    </span>
+                </div>
+                <div class="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden border border-blue-400/50 p-0.5">
+                    <div id="quizProgressBar" class="h-full bg-gradient-to-r from-yellow-400 via-orange-400 to-pink-500 rounded-full transition-all duration-300" style="width: 5%"></div>
+                </div>
+            </div>
+
+            <!-- 質問タイトル -->
+            <div class="text-center my-4 sm:my-6">
+                <h2 id="quizQuestionTitle" class="text-lg sm:text-2xl font-black text-white text-stroke-dark leading-snug">
+                    どちらの属性・シチュエーションにより強く惹かれる？
+                </h2>
+            </div>
+
+            <!-- 2択ボタンエリア（能力ヒント完全非表示） -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 my-4">
+                <!-- 選択肢A -->
+                <button id="choiceBtnA" onclick="handleChoice(0)" class="choice-card p-5 sm:p-6 rounded-2xl text-left flex flex-col justify-between group relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 w-20 h-20 bg-pink-500/10 rounded-full pointer-events-none"></div>
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="px-3 py-0.5 rounded-full bg-pink-500 text-white font-black text-xs shadow">Aタイプ</span>
+                            <span id="choiceCatchA" class="text-xs font-bold text-pink-200 bg-slate-900/80 px-2.5 py-0.5 rounded border border-pink-400/40">黄金比の美学</span>
+                        </div>
+                        <div class="flex items-start gap-3 mb-2">
+                            <span id="choiceEmojiA" class="text-3xl sm:text-4xl shrink-0">🧦</span>
+                            <h3 id="choiceTitleA" class="text-lg sm:text-xl font-black text-white group-hover:text-yellow-300 transition leading-tight">
+                                絶対領域（ニーソ×ミニスカ）
+                            </h3>
+                        </div>
+                        <p id="choiceDescA" class="text-xs sm:text-sm text-blue-100/90 leading-relaxed pl-1">
+                            計算し尽くされた黄金比の隙間と、少し食い込む太もものラインにロマンを感じる。
+                        </p>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-blue-400/30 flex items-center justify-between text-xs font-extrabold text-yellow-300">
+                        <span class="text-blue-200/80 font-bold">直感でこちらを選ぶ</span>
+                        <span class="group-hover:translate-x-1 transition">選択する ▶</span>
+                    </div>
+                </button>
+
+                <!-- 選択肢B -->
+                <button id="choiceBtnB" onclick="handleChoice(1)" class="choice-card p-5 sm:p-6 rounded-2xl text-left flex flex-col justify-between group relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 w-20 h-20 bg-cyan-500/10 rounded-full pointer-events-none"></div>
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="px-3 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-xs shadow">Bタイプ</span>
+                            <span id="choiceCatchB" class="text-xs font-bold text-cyan-200 bg-slate-900/80 px-2.5 py-0.5 rounded border border-cyan-400/40">密着のシルエット</span>
+                        </div>
+                        <div class="flex items-start gap-3 mb-2">
+                            <span id="choiceEmojiB" class="text-3xl sm:text-4xl shrink-0">🖤</span>
+                            <h3 id="choiceTitleB" class="text-lg sm:text-xl font-black text-white group-hover:text-yellow-300 transition leading-tight">
+                                ぴっちりスーツ・黒タイツ
+                            </h3>
+                        </div>
+                        <p id="choiceDescB" class="text-xs sm:text-sm text-blue-100/90 leading-relaxed pl-1">
+                            肌の露出を抑えつつも、ボディラインや透け感がダイレクトに伝わるフェティシズム。
+                        </p>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-blue-400/30 flex items-center justify-between text-xs font-extrabold text-yellow-300">
+                        <span class="text-blue-200/80 font-bold">直感でこちらを選ぶ</span>
+                        <span class="group-hover:translate-x-1 transition">選択する ▶</span>
+                    </div>
+                </button>
+            </div>
+
+            <!-- 1つ戻るボタン -->
+            <div class="mt-4 flex justify-between items-center text-xs text-blue-300">
+                <button id="prevQuizBtn" onclick="prevQuestion()" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 font-bold transition">
+                    ◀ 前の質問に戻る
+                </button>
+                <span>※能力への影響は結果画面まで秘密（マスクデータ）です</span>
+            </div>
+        </section>
+
+        <!-- ==================== 3. パワプロ風・選手能力結果画面 ==================== -->
+        <section id="screen-result" class="hidden space-y-4 animate-pop">
+
+            <!-- パワプロ風・上部選手名＆基本情報バー -->
+            <div class="pawa-panel p-3 sm:p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b-2 border-blue-400/40 pb-3">
+                    <!-- 左：選手名・ポジション・背番号 -->
+                    <div class="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                        <span id="resPosBadge" class="px-3 py-1.5 rounded-lg font-black text-sm sm:text-base shadow-md border-2 border-white/80">
+                            遊撃手
+                        </span>
+                        <span id="resSubPosBadge" class="hidden px-2.5 py-1 rounded-md font-extrabold text-xs bg-slate-800 border border-blue-300/60 text-blue-100 shadow">
+                            サブ：二塁・三塁
+                        </span>
+                        <div class="bg-slate-950/90 border-2 border-blue-400 px-4 py-1 rounded-lg flex items-baseline gap-3 shadow-inner">
+                            <span id="resPlayerName" class="text-xl sm:text-2xl font-black tracking-wider text-white text-stroke-dark">
+                                パワプロ
+                            </span>
+                            <span id="resJerseyNum" class="text-lg sm:text-xl font-black text-yellow-400 italic">
+                                #69
+                            </span>
+                        </div>
+                        <span id="resHandBadge" class="px-2.5 py-1 rounded bg-blue-900/90 border border-blue-400 text-xs sm:text-sm font-extrabold text-blue-100">
+                            右投右打
+                        </span>
+                    </div>
+
+                    <!-- 右：野手/投手/性癖解析タブ切替 ＆ 総合評価スター -->
+                    <div class="flex items-center gap-2 ml-auto flex-wrap">
+                        <span id="resTwoWayBadge" class="hidden px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-300 via-yellow-400 to-orange-500 text-slate-950 font-black text-xs shadow-lg border border-white animate-pulse">
+                            ★ 稀代の二刀流覚醒
+                        </span>
+                        <div class="bg-slate-950/80 p-1 rounded-lg border border-blue-500/60 flex text-xs font-black">
+                            <button id="tabBtnFielder" onclick="switchStatTab('fielder')" class="px-2.5 sm:px-3 py-1.5 rounded-md transition bg-yellow-400 text-slate-950 shadow">
+                                野手能力
+                            </button>
+                            <button id="tabBtnPitcher" onclick="switchStatTab('pitcher')" class="px-2.5 sm:px-3 py-1.5 rounded-md transition text-blue-200 hover:text-white">
+                                投手能力
+                            </button>
+                            <button id="tabBtnAnalysis" onclick="switchStatTab('analysis')" class="px-2.5 sm:px-3 py-1.5 rounded-md transition text-blue-200 hover:text-white">
+                                性癖バランス＆寸評
+                            </button>
+                        </div>
+                        <div class="bg-gradient-to-b from-yellow-400 to-amber-600 px-3 py-1 rounded-lg border-2 border-white shadow flex items-center gap-1">
+                            <span class="text-xs font-black text-amber-950">★</span>
+                            <span id="resTotalStar" class="text-base sm:text-lg font-black text-slate-950 leading-none">485</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ★新設：上部・守備位置＆起用適性ビッグパネル -->
+                <div class="mt-3 bg-gradient-to-r from-slate-950 via-blue-950/90 to-slate-950 border-2 border-blue-400/70 rounded-xl p-3 sm:p-4 shadow-lg">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5 border-b border-blue-500/30 pb-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded bg-yellow-400 text-slate-950 font-black text-[11px]">POSITION APTITUDE</span>
+                            <span class="text-xs sm:text-sm font-black text-yellow-300 tracking-wide">◆ 守備位置・起用適性</span>
+                        </div>
+                        <span id="resPlayerDivisionBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-blue-900/90 border border-blue-400/50 text-cyan-200">
+                            野手専任登録
+                        </span>
+                    </div>
+                    <div id="resLargeAptitudeArea" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                        <!-- JSでメイン守備位置とサブ適性・全体マップを大きく描画 -->
+                    </div>
+                </div>
+
+                <!-- 中段（タブ1＆2共通）：基礎能力 ＆ 特殊能力グリッド -->
+                <div id="mainAbilityGrid" class="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
+
+                    <!-- 左カラム（5列）：基礎能力パネル -->
+                    <div class="lg:col-span-5 pawa-subpanel p-3.5 sm:p-4 flex flex-col justify-between">
+                        
+                        <!-- 【野手基礎能力ビュー】 -->
+                        <div id="viewFielderStats" class="space-y-2.5">
+                            <div class="flex items-center justify-between border-b border-blue-500/40 pb-1.5 mb-2">
+                                <span class="text-xs font-black text-yellow-300 tracking-wider">◆ 野手基礎能力</span>
+                                <span id="resPlayStyleLabel" class="text-xs font-bold px-2 py-0.5 rounded bg-blue-900 text-cyan-200 border border-cyan-400/40">
+                                    バランス型
+                                </span>
+                            </div>
+
+                            <!-- 弾道 -->
+                            <div class="flex items-center justify-between bg-slate-900/90 px-3 py-2 rounded-lg border border-blue-800">
+                                <span class="w-20 font-black text-sm text-sky-200">弾道</span>
+                                <div class="flex items-center gap-3 flex-grow justify-end">
+                                    <div id="resTrajectoryIcon" class="flex items-center gap-1 text-yellow-400 font-black">
+                                        <!-- JSで矢印SVG描画 -->
+                                    </div>
+                                    <span id="resTrajectoryNum" class="w-10 text-right font-black text-xl text-white text-stroke-dark">3</span>
+                                </div>
+                            </div>
+
+                            <!-- ミート〜捕球 6項目 -->
+                            <div id="fielderStatRows" class="space-y-2">
+                                <!-- JSで生成 -->
+                            </div>
+                        </div>
+
+                        <!-- 【投手基礎能力ビュー】 -->
+                        <div id="viewPitcherStats" class="hidden space-y-3">
+                            <div class="flex items-center justify-between border-b border-blue-500/40 pb-1.5">
+                                <span class="text-xs font-black text-yellow-300 tracking-wider">◆ 投手基礎能力・変化球</span>
+                                <span id="resPitchStyleLabel" class="text-xs font-bold px-2 py-0.5 rounded bg-red-900/80 text-pink-200 border border-pink-400/40">
+                                    本格派
+                                </span>
+                            </div>
+
+                            <!-- 球速 -->
+                            <div class="flex items-center justify-between bg-slate-900/90 px-3.5 py-2.5 rounded-lg border border-blue-800">
+                                <span class="font-black text-sm text-sky-200">球速</span>
+                                <div class="flex items-baseline gap-1">
+                                    <span id="resPitchSpeed" class="font-black text-2xl sm:text-3xl text-yellow-300 text-stroke-dark tracking-tight">154</span>
+                                    <span class="text-xs font-bold text-blue-200">km/h</span>
+                                </div>
+                            </div>
+
+                            <!-- コントロール・スタミナ -->
+                            <div id="pitcherStatRows" class="space-y-2">
+                                <!-- JSで生成 -->
+                            </div>
+
+                            <!-- オリジナル変化球ボックス -->
+                            <div class="bg-gradient-to-r from-purple-950/90 via-indigo-950/90 to-slate-900 p-2.5 rounded-lg border-2 border-pink-400/70 shadow">
+                                <div class="text-[10px] font-extrabold text-pink-300 flex items-center justify-between">
+                                    <span>★ 性癖オリジナル変化球</span>
+                                    <span id="resOrigPitchDir" class="px-1.5 py-0.2 bg-pink-500/30 rounded text-pink-200">第2ストレート系</span>
+                                </div>
+                                <div id="resOrigPitchName" class="text-sm sm:text-base font-black text-yellow-300 text-stroke-dark mt-0.5">
+                                    絶対領域ライジング
+                                </div>
+                            </div>
+
+                            <!-- 変化球リスト -->
+                            <div class="space-y-1.5" id="breakingBallRows">
+                                <!-- JSで生成 -->
+                            </div>
+                        </div>
+
+                        <!-- 守備適性＆性癖バランス判定バー -->
+                        <div class="mt-3 pt-2.5 border-t border-blue-500/30 space-y-1.5 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-blue-300">メイン＆サブ適性</span>
+                                <span id="resPosAptitudeText" class="font-black text-white">遊撃手◎ / 二塁手○</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-blue-300">性癖バランス波形</span>
+                                <span id="resSyncRate" class="font-black text-yellow-300 text-xs sm:text-sm">一点突破ロマン特化型</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右カラム（7列）：特殊能力（金特・青特・赤特・緑特）パネル -->
+                    <div class="lg:col-span-7 pawa-subpanel p-3.5 sm:p-4 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between border-b border-blue-500/40 pb-1.5 mb-3">
+                                <span class="text-xs font-black text-yellow-300 tracking-wider">◆ 特殊能力（タップで性癖査定理由を表示）</span>
+                                <span class="text-[11px] text-blue-200 font-bold">金特・青特・赤特・緑特</span>
+                            </div>
+
+                            <!-- 特殊能力バッジグリッド -->
+                            <div id="tokuGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <!-- JSで特殊能力バッジを生成 -->
+                            </div>
+                        </div>
+
+                        <!-- 特殊能力解説ボックス -->
+                        <div class="mt-4 bg-slate-950/90 border-2 border-blue-400/60 rounded-xl p-3 shadow-inner">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span id="tokuDetailTypeBadge" class="px-2 py-0.5 rounded text-[10px] font-black bg-yellow-400 text-slate-950">
+                                    超特殊能力（金特）
+                                </span>
+                                <span id="tokuDetailTitle" class="font-black text-sm text-yellow-300">
+                                    能力バッジをタップして解説を表示
+                                </span>
+                            </div>
+                            <p id="tokuDetailDesc" class="text-xs text-blue-100 leading-relaxed">
+                                各特殊能力バッジをクリック（タップ）すると、どの性癖回答やバランスからその能力が査定されたかの詳細が表示されます。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 下段（またはタブ3メイン表示）：性癖6大エレメント解析 ＆ スカウト寸評 -->
+                <div id="analysisSection" class="mt-4 pawa-subpanel p-4 space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-blue-500/40 pb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded bg-amber-400 text-slate-950 font-black text-xs">
+                                性癖バランス解析＆スカウト調査書
+                            </span>
+                            <h3 id="resScoutHeadline" class="font-black text-sm sm:text-base text-yellow-300">
+                                「ギャップ萌えに命を懸ける、むっつり広角アーティスト」
+                            </h3>
+                        </div>
+                        <span id="resFetishAxisBadge" class="text-xs font-bold text-cyan-300 bg-slate-900 px-2.5 py-1 rounded border border-cyan-500/40">
+                            波形：ギャップ共存マルチ型
+                        </span>
+                    </div>
+
+                    <!-- 性癖6大エレメント ＆ バランス指標グリッド -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-slate-950/75 p-3.5 rounded-xl border border-blue-500/30">
+                        <!-- 左：6大エレメント横棒チャート -->
+                        <div class="md:col-span-7 space-y-2" id="fetishElementBars">
+                            <!-- JSで6軸ゲージを生成 -->
+                        </div>
+                        <!-- 右：バランス診断ボックス -->
+                        <div class="md:col-span-5 bg-slate-900/90 border border-blue-400/40 rounded-lg p-3 space-y-2 text-xs">
+                            <div class="font-black text-yellow-300 border-b border-blue-500/30 pb-1 flex items-center justify-between">
+                                <span>📊 性癖バランス→守備位置査定</span>
+                                <span id="resBalanceBadge" class="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px]">バランス型</span>
+                            </div>
+                            <p id="resBalanceReason" class="text-blue-100 leading-relaxed text-[11px] sm:text-xs">
+                                <!-- JSでなぜその守備位置・能力配分になったかの理由を表示 -->
+                            </p>
+                        </div>
+                    </div>
+
+                    <p id="resScoutReport" class="text-xs sm:text-sm text-white/95 leading-relaxed bg-slate-950/70 p-3.5 rounded-lg border border-blue-500/30">
+                        <!-- JSでスカウト寸評を自動生成 -->
+                    </p>
+
+                    <!-- 選択した性癖一覧チップ -->
+                    <div>
+                        <div class="text-[11px] font-bold text-blue-300 mb-1.5">▼ あなたが選択した全20問の性癖ログ：</div>
+                        <div id="resSelectedTags" class="flex flex-wrap gap-1.5">
+                            <!-- JSで生成 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- アクションボタン群 -->
+                <div class="mt-5 flex flex-wrap items-center justify-center gap-3">
+                    <button onclick="copyResultText()" class="pawa-btn-yellow px-6 py-3 rounded-full font-black text-sm sm:text-base flex items-center gap-2">
+                        <span>📋 選手データ＆寸評をコピー</span>
+                    </button>
+                    <button onclick="startDiagnosis()" class="px-5 py-3 rounded-full bg-blue-600 hover:bg-blue-500 border-2 border-white font-black text-sm sm:text-base text-white shadow-lg transition flex items-center gap-2">
+                        <span>🔄 もう一度最初から診断する</span>
+                    </button>
+                    <button onclick="resetToTitle()" class="px-5 py-3 rounded-full bg-slate-800 hover:bg-slate-700 border-2 border-slate-400 font-bold text-sm sm:text-base text-slate-200 shadow-lg transition">
+                        ⚙️ 選手名・投打を変更
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- コピー完了トースト通知 -->
+    <div id="toastBox" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden bg-slate-900/95 border-2 border-yellow-400 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-pop">
+        <span class="text-yellow-400 text-lg">✔</span>
+        <span id="toastMessage" class="text-xs sm:text-sm font-bold">選手データをクリップボードにコピーしました！</span>
+    </div>
+
+    <!-- フッター -->
+    <footer class="max-w-4xl w-full mx-auto mt-6 text-center text-[11px] text-blue-300/70">
+        ※当アプリはジョーク＆フェチ診断ツールです。生成された選手能力および性癖スカウト寸評はユーモアとしてお楽しみください。
+    </footer>
+
+    <script>
+        // =========================================================================
+        // 1. 全60問・性癖＆フェチ設問マスターデータベース（マスクデータ仕様）
+        // -------------------------------------------------------------------------
+        // 【構成】
+        // ・王道フェチから部位マニアック、特殊衣装、精神性・アブノーマルまで全60問収録。
+        // ・primaryElem: その質問が主に測定する性癖エレメント（動的出題エンジンで使用）
+        // ・depth: 1=ベーシック, 2=ミドルフェチ, 3=ディープ・特殊性癖
+        // =========================================================================
+        const MASTER_QUESTION_POOL = [
+            // ---------------- [Q01 - Q10: 脚線美・衣装・視覚フェチ基礎〜応用] ----------------
+            {
+                id: 'q01', primaryElem: 'visual', depth: 1, category: '脚線美・衣装フェチ',
+                question: '脚元の美学として、より視線が吸い寄せられるのはどっち？',
+                choices: [
+                    { title: '絶対領域（ニーソ×ミニスカ）', shortTag: '絶対領域派', emoji: '🧦', catchCopy: '黄金比率の隙間ロマン', desc: '計算し尽くされた黄金比（4:1:2.5）の隙間と、ニーソックスが少し食い込む太ももの柔らかさに至高のロマンを感じる。', stats: { meet: 8, power: 2, speed: 6, arm: 4, field: 8, catch: 6, velo: 1, ctrl: 8, stam: 4 }, posPts: { second: 4, short: 3, center: 2, reliever: 2 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 4, gap: 1, lead: 0, care: 0, thrill: 0, pure: 2 }, blueToku: { name: 'アベレージヒッター', desc: '【絶対領域の黄金比】ミリ単位の隙間を見逃さない審美眼により、安定したミート力を誇る。' }, greenToku: { name: '選球眼', desc: 'スカートとニーソの絶妙な境界線を見極める観察眼でボール球を見送る。' } },
+                    { title: 'ぴっちりスーツ・黒タイツ', shortTag: '黒タイツ密着派', emoji: '🖤', catchCopy: '高密度の密着シルエット', desc: '肌の直接的な露出を抑えつつも、デニール数による透け感やボディラインがダイレクトに浮き出るフェティシズム。', stats: { meet: 4, power: 7, speed: 5, arm: 8, field: 5, catch: 3, velo: 3, ctrl: 4, stam: 7 }, posPts: { right: 4, third: 3, starter: 3 }, pitchType: { dir: 'downleft', name: 'Hスライダー', add: 2 }, elem: { visual: 4, gap: 0, lead: 1, care: 0, thrill: 2, pure: 0 }, blueToku: { name: 'ラインドライブ', desc: '【高密度タイツの張力】ぴっちりと張り詰めたスーツのような鋭い弾道で外野の間を破る。' }, pitchBlueToku: { name: '重い球', desc: '高デニールタイツのような濃密な球質で打者のバットを押し込む。' } }
+                ]
+            },
+            {
+                id: 'q02', primaryElem: 'gap', depth: 1, category: '性格・デレ属性',
+                question: 'ヒロインの「感情が崩れる瞬間」として好きなのは？',
+                choices: [
+                    { title: 'クーデレ・無表情のわずかな照れ顔', shortTag: 'クーデレ照れ顔派', emoji: '❄️', catchCopy: '氷が溶ける瞬間の微熱', desc: '普段はクールで感情を表に出さない子が、二人きりの時だけ耳まで赤くして視線を逸らすギャップに撃ち抜かれる。', stats: { meet: 7, power: 2, speed: 5, arm: 5, field: 9, catch: 7, velo: 1, ctrl: 9, stam: 4 }, posPts: { second: 4, short: 3, reliever: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 1, gap: 4, lead: 0, care: 1, thrill: 0, pure: 2 }, blueToku: { name: '冷静', desc: '【氷上のクーデレ魂】どんなピンチでも表情ひとつ変えず、静かに好プレーをやってのける。' }, pitchBlueToku: { name: 'ポーカーフェイス', desc: '無表情ヒロインさながらに一切の感情を隠し、打者に狙い球を絞らせない。' } },
+                    { title: 'メスガキ・小悪魔系の「わからせ」赤面', shortTag: '小悪魔わからせ派', emoji: '😈', catchCopy: '余裕崩壊の逆転劇', desc: '「ざぁこ♡」と余裕たっぷりに煽ってきた小悪魔系が、こちらの本気の反撃で一気に余裕を失いしおらしくなる瞬間。', stats: { meet: 3, power: 8, speed: 9, arm: 5, field: 3, catch: 2, velo: 3, ctrl: 2, stam: 6 }, posPts: { closer: 4, center: 3, short: 2 }, pitchType: { dir: 'downright', name: 'シンカー', add: 2 }, elem: { visual: 0, gap: 3, lead: 4, care: 0, thrill: 2, pure: 0 }, blueToku: { name: 'かく乱', desc: '【小悪魔リード】塁上で相手バッテリーを煽り散らかし、守備判断を狂わせる。' }, redToku: { name: '調子極端', desc: '相手を圧倒している時は無双するが、やり込められると一気に弱気になる。' } }
+                ]
+            },
+            {
+                id: 'q03', primaryElem: 'care', depth: 1, category: '関係性・距離感',
+                question: '日常的に隣にいてほしい理想の関係性は？',
+                choices: [
+                    { title: '年上お姉さんの包容力・全肯定甘やかし', shortTag: 'お姉さん甘やかし派', emoji: '☕', catchCopy: 'すべてを包む聖母の膝枕', desc: '疲れた時に「よしよし、頑張ったわね」と膝枕で全てを受け止めてくれる、余裕と母性にあふれたお姉さん。', stats: { meet: 5, power: 6, speed: 2, arm: 5, field: 6, catch: 10, velo: 1, ctrl: 6, stam: 9 }, posPts: { catcher: 5, first: 3, starter: 3 }, pitchType: { dir: 'down', name: 'パーム', add: 2 }, elem: { visual: 0, gap: 0, lead: 0, care: 5, thrill: 0, pure: 2 }, blueToku: { name: 'キャッチャー○', desc: '【聖母の膝枕リード】どんな暴投も優しく受け止め、投手のメンタルを回復させる包容力。' }, pitchBlueToku: { name: '尻上がり', desc: 'お姉さんのような深い包容力とスタミナで、終盤になるほど安定感が増す。' } },
+                    { title: '幼馴染の不器用なツンデレ・焼き餅', shortTag: '幼馴染ツンデレ派', emoji: '💢', catchCopy: '素直になれない距離感', desc: '素直になれず憎まれ口ばかり叩くのに、他の異性と話していると明らかに不機嫌になって袖を引っ張ってくるいじらしさ。', stats: { meet: 7, power: 5, speed: 8, arm: 5, field: 6, catch: 4, velo: 2, ctrl: 6, stam: 6 }, posPts: { second: 3, short: 3, left: 3 }, pitchType: { dir: 'right', name: 'シュート', add: 2 }, elem: { visual: 0, gap: 3, lead: 0, care: 1, thrill: 0, pure: 4 }, blueToku: { name: '粘り打ち', desc: '【素直になれない2ストライク】追い込まれてからも「べ、あんたのためじゃないし！」とファウルで粘る。' }, greenToku: { name: '積極走塁', desc: 'ライバルに先を越されまいと、隙あらば次の塁へ駆け込む。' } }
+                ]
+            },
+            {
+                id: 'q04', primaryElem: 'gap', depth: 1, category: '仕草・スイッチの瞬間',
+                question: '「今、完全にスイッチが入った…！」とドキッとする仕草は？',
+                choices: [
+                    { title: 'メガネを外した時の無防備な素顔', shortTag: 'メガネ外しギャップ派', emoji: '👓', catchCopy: '知性の奥の無防備な瞳', desc: '普段は知的で真面目なメガネっ娘が、ふとした瞬間にメガネを外して目を細めながらこちらを見つめてくる破壊力。', stats: { meet: 9, power: 3, speed: 4, arm: 4, field: 7, catch: 8, velo: 1, ctrl: 9, stam: 4 }, posPts: { second: 4, catcher: 3, reliever: 3 }, pitchType: { dir: 'downleft', name: 'カットボール', add: 2 }, elem: { visual: 1, gap: 4, lead: 0, care: 1, thrill: 0, pure: 2 }, blueToku: { name: '固め打ち', desc: '【知性のレンズ解放】一度相手投手のクセを見抜くと、覚醒モードで安打を量産する。' }, pitchBlueToku: { name: '緩急○', desc: '真面目な直球と無防備なスローボールのギャップで打者の芯を外す。' } },
+                    { title: '髪を結ぶ（またはポニテをほどく）瞬間', shortTag: 'うなじ・髪結び派', emoji: '🎀', catchCopy: 'うなじが覗く刹那の色気', desc: 'ヘアゴムを口にくわえて髪をまとめる時に覗くうなじ、あるいは結んでいた髪をほどいて雰囲気が一変する色気。', stats: { meet: 5, power: 7, speed: 6, arm: 9, field: 5, catch: 3, velo: 3, ctrl: 5, stam: 6 }, posPts: { right: 4, third: 3, closer: 3 }, pitchType: { dir: 'left', name: '高速スライダー', add: 2 }, elem: { visual: 4, gap: 2, lead: 1, care: 0, thrill: 1, pure: 0 }, blueToku: { name: '初球○', desc: '【ゴムをくわえた一瞬の隙】髪を束ねるその刹那のスイッチを逃さず、初球を完璧に仕留める。' }, greenToku: { name: 'レーザービーム', desc: 'うなじのラインのように美しく伸びる矢のような返球で走者を刺す。' } }
+                ]
+            },
+            {
+                id: 'q05', primaryElem: 'thrill', depth: 2, category: '愛の重さ・内面ギャップ',
+                question: '秘められた「内面のディープさ」として惹かれるのは？',
+                choices: [
+                    { title: 'ヤンデレ・独占欲強めの「重い愛」', shortTag: '重愛・ヤンデレ派', emoji: '⛓️', catchCopy: '底なしの独占欲と執着', desc: '「私だけを見ていてくれればいいの…」と、スマホの履歴からスケジュールまで把握したがる底なしの執着と一途さ。', stats: { meet: 2, power: 10, speed: 3, arm: 8, field: 2, catch: 2, velo: 4, ctrl: 2, stam: 8 }, posPts: { closer: 4, first: 4, left: 3 }, pitchType: { dir: 'down', name: 'スプリット', add: 3 }, elem: { visual: 0, gap: 1, lead: 2, care: 1, thrill: 5, pure: 0 }, blueToku: { name: 'パワーヒッター', desc: '【愛の重さは打球の重さ】「絶対に逃がさない」という強烈な執念を乗せ、スタンドへ突き刺す。' }, redToku: { name: '三振', desc: '狙った球（相手）への執着が強すぎて、空振りか本塁打かの両極端になりがち。' } },
+                    { title: '清楚・風紀委員タイプの「隠れむっつり」', shortTag: '清楚系むっつり派', emoji: '📖', catchCopy: '聖女の仮面と暴走妄想', desc: '表向きは校則厳守でウブな優等生なのに、実は誰よりも耳年増で、妄想だけで顔を真っ赤にしているむっつり属性。', stats: { meet: 7, power: 6, speed: 5, arm: 4, field: 7, catch: 5, velo: 2, ctrl: 7, stam: 5 }, posPts: { second: 3, catcher: 3, right: 3 }, pitchType: { dir: 'downright', name: 'チェンジアップ', add: 2 }, elem: { visual: 0, gap: 4, lead: 0, care: 0, thrill: 3, pure: 1 }, blueToku: { name: '広角打法', desc: '【健全なフリをした全方位妄想】一見おとなしい構えから、右にも左にも鋭い打球を打ち分ける。' }, redToku: { name: 'むっつり', desc: '試合中はポーカーフェイスを装っているが、頭の中は常に煩悩でフル回転している。' } }
+                ]
+            },
+            {
+                id: 'q06', primaryElem: 'visual', depth: 1, category: 'ビジュアル・肌と髪',
+                question: '視覚的なコントラストとして、より心を奪われるのは？',
+                choices: [
+                    { title: '健康的で眩しい「褐色肌・日焼けあと」', shortTag: '褐色・日焼けあと派', emoji: '☀️', catchCopy: '太陽のコントラスト', desc: '太陽を浴びた小麦色の肌と、水着やユニフォームの下に覗く白い「日焼けあと」のコントラストに野生の色気を感じる。', stats: { meet: 4, power: 6, speed: 10, arm: 8, field: 5, catch: 3, velo: 3, ctrl: 3, stam: 8 }, posPts: { center: 5, right: 3, short: 3 }, pitchType: { dir: 'left', name: 'Vスライダー', add: 2 }, elem: { visual: 4, gap: 1, lead: 2, care: 0, thrill: 1, pure: 0 }, blueToku: { name: '内野安打○', desc: '【太陽のフィジカル】躍動感あふれる褐色の脚力で、平凡なゴロもセーフにしてしまう。' }, greenToku: { name: '積極盗塁', desc: '眩しい日差しの下、スタートを切ったら誰にも止められない。' } },
+                    { title: '透き通るような「色白・黒髪ロング」', shortTag: '色白・黒髪ロング派', emoji: '🌙', catchCopy: '月光のような清楚美', desc: '儚げなほど白い肌と、風に靡く艶やかな黒髪ロング。少し照れただけで頬が桜色に染まる清楚な美しさ。', stats: { meet: 8, power: 2, speed: 5, arm: 4, field: 9, catch: 7, velo: 1, ctrl: 9, stam: 4 }, posPts: { short: 4, second: 4, starter: 2 }, pitchType: { dir: 'down', name: 'スローカーブ', add: 2 }, elem: { visual: 3, gap: 0, lead: 0, care: 1, thrill: 0, pure: 4 }, blueToku: { name: '流し打ち', desc: '【黒髪がなびく芸術打法】逆らわずに綺麗におっつけ、三遊間へ美しい打球を流し込む。' }, pitchBlueToku: { name: 'リリース○', desc: '指先まで神経の行き届いた繊細なフォームから同じ軌道で直球と変化球を投げ分ける。' } }
+                ]
+            },
+            {
+                id: 'q07', primaryElem: 'visual', depth: 2, category: 'コスチューム・非日常',
+                question: '王道コスチューム対決！よりテンションが上がるのは？',
+                choices: [
+                    { title: 'クラシカルな純白エプロンの「メイド服」', shortTag: '王道メイド服派', emoji: '🫖', catchCopy: '絶対なる献身と主従の美学', desc: 'ロングスカートにフリルのカチューシャ。「お帰りなさいませ」と跪いて尽くしてくれる主従関係のロマン。', stats: { meet: 6, power: 3, speed: 5, arm: 5, field: 9, catch: 9, velo: 1, ctrl: 8, stam: 6 }, posPts: { catcher: 4, second: 4, reliever: 3 }, pitchType: { dir: 'downleft', name: 'スラーブ', add: 2 }, elem: { visual: 2, gap: 0, lead: 1, care: 4, thrill: 0, pure: 1 }, blueToku: { name: '守備職人', desc: '【完璧なる奉仕精神】どんな打球にも優雅に回り込み、チリひとつ残さないグラブ捌きを見せる。' }, greenToku: { name: 'チームプレイ○', desc: '主（チーム）の勝利のためなら自己犠牲も厭わない献身性。' } },
+                    { title: '破壊力抜群の「バニーガール・ハイレグ」', shortTag: 'バニーガール派', emoji: '🐰', catchCopy: '煌びやかな曲線美の極致', desc: 'エナメル質のボディスーツに網タイツ、うさ耳とカフス。大人の色気とエンタメ性が融合した究極の造形美。', stats: { meet: 4, power: 8, speed: 8, arm: 6, field: 4, catch: 3, velo: 3, ctrl: 4, stam: 6 }, posPts: { center: 4, third: 4, closer: 3 }, pitchType: { dir: 'down', name: 'ナックルカーブ', add: 2 }, elem: { visual: 5, gap: 0, lead: 1, care: 0, thrill: 2, pure: 0 }, blueToku: { name: 'チャンス○', desc: '【カジノのジャックポット】観客の視線が集まる好機ほどアドレナリンが爆発し、快打を放つ。' }, greenToku: { name: '人気者', desc: '華やかな存在感でスタジアム中のファンを魅了するスター性。' } }
+                ]
+            },
+            {
+                id: 'q08', primaryElem: 'thrill', depth: 2, category: 'ボイス・聴覚フェチ',
+                question: '耳元で囁かれたら一瞬で理性が飛ぶ「声・言葉遣い」は？',
+                choices: [
+                    { title: '方言女子の無自覚な「訛り・告白」', shortTag: '方言女子派', emoji: '🌾', catchCopy: '感情が溢れ出る素朴な訛り', desc: '普段は標準語を頑張っている子が、感情が高ぶった時だけ「…うち、あんたのこと好いとるよ」と地元訛りが出る破壊力。', stats: { meet: 8, power: 5, speed: 4, arm: 5, field: 6, catch: 7, velo: 2, ctrl: 7, stam: 6 }, posPts: { catcher: 3, left: 4, third: 2 }, pitchType: { dir: 'right', name: '高速シュート', add: 2 }, elem: { visual: 0, gap: 3, lead: 0, care: 2, thrill: 0, pure: 3 }, blueToku: { name: '満塁男', desc: '【訛りが出るほどの感情爆発】極限のプレッシャーがかかる満塁の場面で素の本能が覚醒する。' }, pitchBlueToku: { name: '対ピンチ○', desc: '土壇場で本来の持ち味が発揮され、粘り強い投球で切り抜ける。' } },
+                    { title: 'ダウナー系・低音ボイスの「耳元吐息ASMR」', shortTag: '低音ダウナー吐息派', emoji: '🎧', catchCopy: '鼓膜を震わせるゼロ距離吐息', desc: '少し眠たげなジト目と落ち着いた低音ボイスで、耳元にゼロ距離で近づきゾクッとするような吐息を吹きかけてくる瞬間。', stats: { meet: 6, power: 4, speed: 5, arm: 7, field: 6, catch: 6, velo: 2, ctrl: 8, stam: 5 }, posPts: { reliever: 4, catcher: 4, closer: 3 }, pitchType: { dir: 'downright', name: 'サークルチェンジ', add: 3 }, elem: { visual: 0, gap: 1, lead: 2, care: 1, thrill: 4, pure: 0 }, blueToku: { name: 'ささやき戦術', desc: '【ASMR級の吐息リード】打者の耳元で蠱惑的な一言を囁き、スイングのタイミングを狂わせる。' }, pitchBlueToku: { name: '奪三振', desc: 'ゾクッとするような魔性の変化球で、打者の腰を砕いて三振を奪う。' } }
+                ]
+            },
+            {
+                id: 'q09', primaryElem: 'visual', depth: 2, category: '部位・質感フェチ',
+                question: 'マニアックな「部位・パーツフェチ」として語り合いたいのは？',
+                choices: [
+                    { title: '鎖骨・うなじ・肩甲骨の「華奢な骨格ライン」', shortTag: '鎖骨・うなじ骨格派', emoji: '🦢', catchCopy: '繊細なる骨格の芸術', desc: 'オフショルダーや浴衣の襟元から覗く、繊細な鎖骨のくぼみと首筋から肩へ流れる美しいラインに芸術性を感じる。', stats: { meet: 6, power: 2, speed: 9, arm: 5, field: 9, catch: 4, velo: 1, ctrl: 9, stam: 3 }, posPts: { short: 5, second: 3, center: 3 }, pitchType: { dir: 'left', name: 'カーブ', add: 2 }, elem: { visual: 4, gap: 1, lead: 0, care: 0, thrill: 1, pure: 2 }, blueToku: { name: '悪球打ち', desc: '【マニアックな着眼点】普通の打者が見逃すような厳しいコース（鎖骨の高さ）の球も芸術的にヒットにする。' } },
+                    { title: 'むっちり太もも・お腹まわりの「柔らか肉感」', shortTag: 'むっちり肉感派', emoji: '🍑', catchCopy: '指が沈み込む幸福の弾力', desc: '細すぎるよりも、触れた時に指が沈み込むような太もものむっちり感や、少しプニッとしたお腹まわりの安心感がたまらない。', stats: { meet: 4, power: 10, speed: 3, arm: 6, field: 4, catch: 7, velo: 3, ctrl: 4, stam: 10 }, posPts: { first: 5, left: 4, starter: 3 }, pitchType: { dir: 'down', name: 'SFF', add: 2 }, elem: { visual: 3, gap: 0, lead: 1, care: 3, thrill: 1, pure: 0 }, blueToku: { name: 'プルヒッター', desc: '【圧倒的な下半身の粘り】むっちりとした下半身の安定感から、引っ張り方向へ強烈な打球を飛ばす。' } }
+                ]
+            },
+            {
+                id: 'q10', primaryElem: 'pure', depth: 1, category: 'シチュエーション・秘密の共有',
+                question: '二人だけの「秘密のシチュエーション」で燃えるのは？',
+                choices: [
+                    { title: '放課後の誰もいない教室・夕暮れの密会', shortTag: '放課後教室・青春派', emoji: '🌇', catchCopy: '茜色のカーテンと青春の鼓動', desc: '茜色に染まるカーテン越しの教室。誰かに見つかるかもしれないスリルと、青春のノスタルジーが交差する時間。', stats: { meet: 7, power: 7, speed: 6, arm: 6, field: 6, catch: 5, velo: 2, ctrl: 6, stam: 7 }, posPts: { center: 3, short: 3, starter: 4 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 0, gap: 1, lead: 0, care: 1, thrill: 1, pure: 5 }, blueToku: { name: 'サヨナラ男', desc: '【夕暮れのドラマチック弾】試合終了間際の黄昏時、ドラマのクライマックスのような一打を放つ。' } },
+                    { title: '職場・学校では犬猿の仲なのに「裏では恋人」', shortTag: '秘密の裏恋人派', emoji: '🤫', catchCopy: '周囲を欺く背徳の共犯関係', desc: 'みんなの前ではよそよそしく言い争っているのに、給湯室や非常階段に入った瞬間、激しく求め合う背徳のギャップ。', stats: { meet: 5, power: 8, speed: 7, arm: 7, field: 5, catch: 4, velo: 3, ctrl: 5, stam: 6 }, posPts: { third: 4, reliever: 4, right: 3 }, pitchType: { dir: 'downleft', name: '縦スライダー', add: 2 }, elem: { visual: 0, gap: 4, lead: 1, care: 0, thrill: 4, pure: 0 }, blueToku: { name: '意外性', desc: '【表と裏の二面性】普段は淡白な打撃に見せかけて、ここぞの場面で特大アーチを叩き込む。' }, greenToku: { name: '背水', desc: 'バレたら終わりのスリルを楽しむかのように、追い込まれるほど集中力が増す。' } }
+                ]
+            },
+
+            // ---------------- [Q11 - Q20: 主導権・熱量・シルエット・香り・愛の証明] ----------------
+            {
+                id: 'q11', primaryElem: 'lead', depth: 1, category: '主導権・SとMの力学',
+                question: '二人の間の「主導権（リード）」として理想的なのは？',
+                choices: [
+                    { title: '普段は強気な子を、いざという時にリードする', shortTag: '強気女子を攻略派', emoji: '👑', catchCopy: 'プライドを溶かす王者の支配', desc: '勝気でプライドの高いヒロインが、こちらの頼もしさや強引なアプローチに敵わず、最後は素直に身を委ねてくる展開。', stats: { meet: 4, power: 9, speed: 5, arm: 8, field: 4, catch: 4, velo: 3, ctrl: 4, stam: 7 }, posPts: { closer: 4, third: 4, first: 3 }, pitchType: { dir: 'left', name: 'パワーC', add: 2 }, elem: { visual: 0, gap: 3, lead: 5, care: 0, thrill: 1, pure: 0 }, blueToku: { name: 'ハイボールヒッター', desc: '【プライドの高い高めの球を粉砕】強気に投げ込んでくる高めのつり球を上から豪快に叩き潰す。' }, greenToku: { name: '強振多用', desc: 'どんな相手にも主導権を渡さず、常にフルスイングでねじ伏せにいく。' } },
+                    { title: '余裕のある相手に、手のひらで転がされたい', shortTag: '手のひら転がされ派', emoji: '🕸️', catchCopy: '甘美なる翻弄と委ねる快感', desc: 'こちらの考えや好みをすべてお見通しで、優しく微笑みながら主導権を握られ、心地よく翻弄されてしまう快感。', stats: { meet: 8, power: 3, speed: 6, arm: 4, field: 8, catch: 7, velo: 1, ctrl: 9, stam: 5 }, posPts: { second: 5, catcher: 3, reliever: 3 }, pitchType: { dir: 'downright', name: 'スクリュー', add: 2 }, elem: { visual: 0, gap: 0, lead: 0, care: 4, thrill: 3, pure: 1 }, blueToku: { name: 'いぶし銀', desc: '【受け身の美学】相手の球威に逆らわず、軽やかなバット捌きで外野の前に落とす。' }, greenToku: { name: 'ミート多用', desc: '無理に引っ張らず、状況に応じた確実なコンタクトを最優先する。' } }
+                ]
+            },
+            {
+                id: 'q12', primaryElem: 'pure', depth: 1, category: '汗・熱量フェチ',
+                question: 'ヒロインの「体温や息遣い」を感じる瞬間として好きなのは？',
+                choices: [
+                    { title: '部活や運動後の「汗ばんだ肌・上気した頬」', shortTag: 'スポーツ汗ばみ派', emoji: '💦', catchCopy: '弾ける鼓動とリアルな熱量', desc: '激しい運動のあと、首筋を伝う汗と荒い息遣い。体操服やユニフォーム越しに伝わるリアルな熱量にドキドキする。', stats: { meet: 5, power: 6, speed: 9, arm: 7, field: 6, catch: 3, velo: 3, ctrl: 4, stam: 10 }, posPts: { center: 4, starter: 4, right: 3 }, pitchType: { dir: 'down', name: '縦フォーク', add: 2 }, elem: { visual: 3, gap: 0, lead: 2, care: 0, thrill: 1, pure: 2 }, blueToku: { name: 'ヘッドスライディング', desc: '【青春の汗と泥】ユニフォームが汗と土で汚れるのも構わず、ベースへ魂のダイブを見せる。' }, pitchBlueToku: { name: '闘志', desc: 'マウンド上で熱い息遣いと気迫を前面に押し出し、打者を圧倒する。' } },
+                    { title: 'お風呂上がり・寝起きの「無防備な色気」', shortTag: '湯上がり無防備派', emoji: '🛁', catchCopy: '信頼が生むゼロ距離の脱力感', desc: '濡れた髪にオーバーサイズのTシャツ一枚。シャンプーの香りと、信頼しきっているからこそのだらしない無防備さ。', stats: { meet: 7, power: 6, speed: 3, arm: 4, field: 6, catch: 8, velo: 1, ctrl: 8, stam: 6 }, posPts: { first: 4, left: 4, catcher: 3 }, pitchType: { dir: 'down', name: 'ナックル', add: 2 }, elem: { visual: 1, gap: 2, lead: 0, care: 3, thrill: 0, pure: 2 }, blueToku: { name: 'ローボールヒッター', desc: '【脱力の極意】お風呂上がりのようなリラックスした構えから、低めの変化球をすくい上げる。' } }
+                ]
+            },
+            {
+                id: 'q13', primaryElem: 'visual', depth: 1, category: 'プロポーション・シルエット',
+                question: '抱きしめた時の「シルエット・サイズ感」として惹かれるのは？',
+                choices: [
+                    { title: '圧倒的な包容力と破壊力の「豊満グラマラス」', shortTag: '豊満グラマラス派', emoji: '💎', catchCopy: '視線を釘付けにする王道ロマン', desc: 'ボタンが弾けそうなシャツや、歩くたびに揺れる圧倒的な存在感。視覚的にも触覚的にも幸福感に包まれる王道ロマン。', stats: { meet: 4, power: 10, speed: 3, arm: 6, field: 3, catch: 8, velo: 3, ctrl: 4, stam: 8 }, posPts: { first: 5, third: 4, left: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 4, gap: 0, lead: 1, care: 3, thrill: 0, pure: 0 }, blueToku: { name: '威圧感', desc: '【隠しきれない圧倒的存在感】打席に立つだけで相手投手の視線を釘付けにし、スタミナを削り取る。' } },
+                    { title: 'すっぽり腕に収まる「小柄・華奢スレンダー」', shortTag: '小柄・スレンダー派', emoji: '🧚', catchCopy: '守りたくなる可憐なシルエット', desc: '身長差があって上目遣いで見上げてくる可愛らしさ。守ってあげたくなる華奢な肩幅と軽やかな身のこなし。', stats: { meet: 7, power: 2, speed: 10, arm: 4, field: 9, catch: 5, velo: 1, ctrl: 8, stam: 4 }, posPts: { short: 5, second: 4, center: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 3, gap: 1, lead: 2, care: 0, thrill: 0, pure: 2 }, blueToku: { name: '盗塁○', desc: '【軽やかなフェアリーステップ】華奢な体躯を活かし、バッテリーが気づいた時には二塁を陥れている。' } }
+                ]
+            },
+            {
+                id: 'q14', primaryElem: 'thrill', depth: 1, category: '視線・アイコンタクト',
+                question: '目が合った瞬間にゾクッとする「瞳の表情」は？',
+                choices: [
+                    { title: 'クールに見下ろされる「ジト目・冷ややかな視線」', shortTag: 'ジト目・見下ろし派', emoji: '👁️', catchCopy: '射抜かれるような氷の視線', desc: '「なに見てるの…？」と少し呆れたような半眼で見つめられる瞬間。冷たい視線の奥に隠れた信頼感がたまらない。', stats: { meet: 6, power: 4, speed: 5, arm: 8, field: 6, catch: 5, velo: 2, ctrl: 10, stam: 4 }, posPts: { reliever: 5, right: 3, third: 3 }, pitchType: { dir: 'left', name: 'カットボール', add: 2 }, elem: { visual: 2, gap: 2, lead: 0, care: 0, thrill: 4, pure: 0 }, pitchBlueToku: { name: 'クロスファイヤー', desc: '【射抜くようなジト目角度】打者の内角ギリギリを冷徹にえぐる対角線のストレート。' } },
+                    { title: 'ウルウルと潤んだ瞳の「上目遣い・おねだり」', shortTag: '潤み目・上目遣い派', emoji: '🥺', catchCopy: '誰も抗えない小動物の瞳', desc: '裾をちょんと掴みながら、潤んだ瞳で下からじっと見上げてくる仕草。どんなお願いも断れなくなる究極の武器。', stats: { meet: 8, power: 3, speed: 6, arm: 4, field: 6, catch: 8, velo: 1, ctrl: 8, stam: 5 }, posPts: { catcher: 4, second: 4, left: 3 }, pitchType: { dir: 'downright', name: 'チェンジアップ', add: 2 }, elem: { visual: 1, gap: 1, lead: 2, care: 2, thrill: 0, pure: 3 }, blueToku: { name: 'チャンスメーカー', desc: '【誰も断れないおねだり出塁】無走者の場面で球審すら味方につける選球眼と巧打で好機を演出する。' } }
+                ]
+            },
+            {
+                id: 'q15', primaryElem: 'care', depth: 2, category: '制服・フォーマル衣装',
+                question: '日常の中の「制服・仕事着フェチ」として推せるのは？',
+                choices: [
+                    { title: 'タイトスカートにヒールが響く「キャリアウーマンOL」', shortTag: 'タイトスカートOL派', emoji: '👠', catchCopy: '洗練された大人の機能美', desc: 'パリッとしたシャツにタイトスカート、ストッキング越しの美脚。仕事ができる大人の女性がふと見せる隙に弱い。', stats: { meet: 7, power: 5, speed: 4, arm: 6, field: 8, catch: 7, velo: 2, ctrl: 8, stam: 5 }, posPts: { second: 4, first: 3, reliever: 3 }, pitchType: { dir: 'right', name: 'ツーシーム', add: 2 }, elem: { visual: 3, gap: 2, lead: 2, care: 1, thrill: 1, pure: 0 }, blueToku: { name: '代打○', desc: '【デキる女の仕事術】ここぞのプレゼン（代打起用）で確実に結果を残すプロフェッショナル。' } },
+                    { title: '清楚なのにどこか背徳的な「白衣・ナース服」', shortTag: '白衣・ナース服派', emoji: '💉', catchCopy: '聖なる白衣と密やかな献身', desc: '清潔感あふれる白衣の天使。優しく看病されたい願望と、非日常的なコスチュームへの憧れが詰まった聖域。', stats: { meet: 6, power: 4, speed: 5, arm: 5, field: 6, catch: 9, velo: 1, ctrl: 7, stam: 9 }, posPts: { starter: 4, catcher: 4, reliever: 4 }, pitchType: { dir: 'downleft', name: 'スラーブ', add: 2 }, elem: { visual: 2, gap: 0, lead: 0, care: 5, thrill: 2, pure: 0 }, pitchBlueToku: { name: '回復○', desc: '【白衣の天使のトリートメント】連戦や連投の疲労も素早く回復するコンディショニング能力。' }, blueToku: { name: 'ケガしにくさ○', desc: '徹底したセルフケアにより、シーズンを通して戦線を離脱しない。' } }
+                ]
+            },
+            {
+                id: 'q16', primaryElem: 'visual', depth: 2, category: '服装の着崩し・サイズ感',
+                question: '私服や部屋着の「着こなしフェチ」としてグッとくるのは？',
+                choices: [
+                    { title: '萌え袖になる「彼シャツ・ぶかぶかパーカー」', shortTag: '彼シャツ・萌え袖派', emoji: '👕', catchCopy: '余った袖口から覗く華奢な指先', desc: '指先がちょこんと出る長い袖と、太ももまで隠れるオーバーサイズ感。華奢さが強調される無防備なシルエット。', stats: { meet: 8, power: 3, speed: 8, arm: 4, field: 7, catch: 6, velo: 1, ctrl: 8, stam: 4 }, posPts: { short: 4, left: 4, second: 3 }, pitchType: { dir: 'downright', name: 'シンカー', add: 2 }, elem: { visual: 2, gap: 1, lead: 0, care: 2, thrill: 0, pure: 3 }, blueToku: { name: 'バント○', desc: '【萌え袖の絶妙なクッション】ぶかぶかの袖で球の勢いを吸収するかのように、ピタリと打球を転がす。' } },
+                    { title: '体のラインがくっきり出る「ぴたニット・縦リブ」', shortTag: 'ぴたニット・ライン派', emoji: '🧶', catchCopy: '曲線を際立たせる魅惑の陰影', desc: '露出しているわけではないのに、リブ編みのニットが身体の曲線を強調し、見る者の想像力を無限にかき立てる。', stats: { meet: 5, power: 9, speed: 4, arm: 8, field: 4, catch: 4, velo: 3, ctrl: 5, stam: 7 }, posPts: { third: 5, right: 4, first: 3 }, pitchType: { dir: 'left', name: 'Hスライダー', add: 2 }, elem: { visual: 5, gap: 0, lead: 1, care: 0, thrill: 2, pure: 0 }, blueToku: { name: '対エース○', desc: '【隠しきれない存在感】相手が格上のエース投手であるほど燃え上がり、堂々たる打撃を見せる。' } }
+                ]
+            },
+            {
+                id: 'q17', primaryElem: 'gap', depth: 2, category: '非日常・ファンタジー属性',
+                question: 'もし二次元・ファンタジー要素を1つだけ現実に召喚できるなら？',
+                choices: [
+                    { title: '感情に合わせてピコピコ動く「ケモミミ・尻尾」', shortTag: 'ケモミミ・尻尾派', emoji: '🦊', catchCopy: '嘘をつけない野生の感情表現', desc: '嬉しい時は尻尾がぶんぶん揺れ、驚いた時は耳がピンと立つ。言葉以上に本音がダダ漏れになる動物的可愛さ。', stats: { meet: 6, power: 5, speed: 10, arm: 7, field: 8, catch: 3, velo: 2, ctrl: 4, stam: 8 }, posPts: { center: 5, short: 4, right: 2 }, pitchType: { dir: 'right', name: 'シュート', add: 2 }, elem: { visual: 3, gap: 2, lead: 0, care: 2, thrill: 0, pure: 2 }, blueToku: { name: '走塁○', desc: '【野生のケモミミステップ】打球判断からトップスピードに乗るまでが一瞬で、二塁打を三塁打に変える。' } },
+                    { title: '気高く美しいのに世間知らずな「お嬢様・姫騎士」', shortTag: '気高きお嬢様・姫騎士派', emoji: '⚔️', catchCopy: '凛とした誇りと初心なギャップ', desc: '凛とした気品とプライドを持ちながら、庶民の食べ物や恋愛には驚くほどウブでチョロい「くっころ」系ギャップ。', stats: { meet: 5, power: 8, speed: 4, arm: 9, field: 6, catch: 4, velo: 3, ctrl: 6, stam: 7 }, posPts: { starter: 4, third: 4, right: 3 }, pitchType: { dir: 'down', name: 'スプリット', add: 2 }, elem: { visual: 2, gap: 4, lead: 3, care: 0, thrill: 0, pure: 1 }, pitchBlueToku: { name: 'ノビ○', desc: '【気高き騎士の直球】気品あふれるフォームから放たれるストレートが手元で伸び上がる。' }, redToku: { name: '打たれ強さ△', desc: 'プライドが高いため、一度連打を浴びて「くっ…！」となると動揺しがち。' } }
+                ]
+            },
+            {
+                id: 'q18', primaryElem: 'gap', depth: 2, category: '弱点・ポンコツギャップ',
+                question: '完璧に見える子の「人間らしい弱点」として愛おしいのは？',
+                choices: [
+                    { title: 'クールで優秀なのに「方向音痴・生活力ゼロ」', shortTag: 'クール系ポンコツ派', emoji: '🧭', catchCopy: '放っておけない愛すべき欠落', desc: '仕事や勉強は完璧なのに、プライベートでは道に迷うわ料理は焦がすわで、「自分がいないとダメだな」と思わせる隙。', stats: { meet: 6, power: 9, speed: 4, arm: 6, field: 2, catch: 2, velo: 2, ctrl: 4, stam: 6 }, posPts: { first: 5, left: 4, third: 2 }, pitchType: { dir: 'down', name: 'ナックルカーブ', add: 2 }, elem: { visual: 0, gap: 5, lead: 2, care: 1, thrill: 0, pure: 1 }, redToku: { name: 'エラー', desc: '【愛すべきポンコツ守備】打撃は魅力的だが、簡単なフライやゴロでたまにポカをやらかす。' } },
+                    { title: '普段はしっかり者なのに「ほろ酔いで急に甘えん坊」', shortTag: 'ほろ酔い甘えん坊派', emoji: '🍶', catchCopy: '理性が溶ける夜の甘え声', desc: 'お酒が少し入った途端、トロンとした目で肩に寄りかかり、普段は絶対に言わない本音でおねだりしてくる破壊力。', stats: { meet: 8, power: 6, speed: 4, arm: 4, field: 6, catch: 8, velo: 1, ctrl: 7, stam: 6 }, posPts: { catcher: 4, reliever: 4, first: 3 }, pitchType: { dir: 'downright', name: 'スクリュー', add: 2 }, elem: { visual: 0, gap: 4, lead: 0, care: 3, thrill: 1, pure: 1 }, blueToku: { name: '逆境○', desc: '【ほろ酔いからの逆転劇】ビハインドの展開（酔いが回った終盤）になるほどリミッターが外れて打ちまくる。' } }
+                ]
+            },
+            {
+                id: 'q19', primaryElem: 'pure', depth: 1, category: '香り・ゼロ距離の感覚',
+                question: 'ふとすれ違った時や急接近した時にクラッとするのは？',
+                choices: [
+                    { title: '清潔感あふれる「シャンプー・柔軟剤の香り」', shortTag: 'シャンプー清潔感派', emoji: '🫧', catchCopy: '風に揺れる清楚な残り香', desc: '作り込んだ香水ではなく、お風呂上がりや風が吹いた時にふわっと香る、清楚で優しい石鹸・シャンプーの匂い。', stats: { meet: 7, power: 3, speed: 7, arm: 5, field: 8, catch: 7, velo: 1, ctrl: 9, stam: 5 }, posPts: { short: 4, second: 4, center: 3 }, pitchType: { dir: 'left', name: 'スローカーブ', add: 2 }, elem: { visual: 0, gap: 0, lead: 0, care: 2, thrill: 0, pure: 5 }, blueToku: { name: 'ムード○', desc: '【ベンチに漂う清潔感】いるだけでダグアウトの空気が爽やかになり、味方の士気を高める。' } },
+                    { title: '大人っぽく魅惑的な「甘い香水・リップのツヤ」', shortTag: '甘い香水・艶リップ派', emoji: '💄', catchCopy: '理性を惑わす芳醇なフレグランス', desc: 'ドキッとするようなバニラやムスク系の香りと、プルプルに艶めく唇。大人の色気で主導権を奪われる感覚。', stats: { meet: 6, power: 8, speed: 5, arm: 8, field: 5, catch: 4, velo: 2, ctrl: 6, stam: 6 }, posPts: { closer: 4, third: 4, right: 3 }, pitchType: { dir: 'downright', name: 'サークルチェンジ', add: 2 }, elem: { visual: 2, gap: 0, lead: 2, care: 0, thrill: 4, pure: 0 }, pitchBlueToku: { name: '幻惑', desc: '【魅惑のフレグランス投法】艶やかなフォームで打者の感覚を狂わせ、ボール球を振らせる。' } }
+                ]
+            },
+            {
+                id: 'q20', primaryElem: 'thrill', depth: 3, category: 'クライマックス・愛の証明',
+                question: '恋愛・性癖の深淵として、より魂が震える瞬間は？',
+                choices: [
+                    { title: '誰にも見せない「素の弱さ・涙」を自分だけに預けてくれる', shortTag: '秘密の涙・全信頼派', emoji: '🫂', catchCopy: '孤独を溶かす絶対的信頼', desc: '外では気丈に振る舞っている子が、自分の胸の中だけで声を殺して泣き、すべてを委ねてくれる究極の信頼関係。', stats: { meet: 7, power: 5, speed: 4, arm: 6, field: 8, catch: 10, velo: 1, ctrl: 9, stam: 8 }, posPts: { catcher: 5, starter: 4, second: 2 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 0, gap: 3, lead: 0, care: 4, thrill: 0, pure: 4 }, blueToku: { name: '決勝打', desc: '【涙を受け止める一撃】チームの苦境をすべて背負い、終盤に勝利を決めるタイムリーを放つ。' } },
+                    { title: 'お互いの「一番ディープな性癖・欲望」をさらけ出して溺れる', shortTag: '深淵の欲望共有派', emoji: '🔥', catchCopy: '本能をぶつけ合う共犯の夜', desc: '綺麗事や遠慮をすべて取っ払い、お互いの隠していたフェティシズムと本能をぶつけ合う、濃密で共犯的な夜。', stats: { meet: 4, power: 10, speed: 6, arm: 8, field: 3, catch: 3, velo: 3, ctrl: 3, stam: 9 }, posPts: { closer: 4, first: 4, third: 4 }, pitchType: { dir: 'down', name: 'SFF', add: 3 }, elem: { visual: 1, gap: 0, lead: 4, care: 0, thrill: 5, pure: 0 }, blueToku: { name: 'フルカウント○', desc: '【極限の共犯関係】3ボール2ストライクの極限状態で本能が解放され、強烈な打球を飛ばす。' } }
+                ]
+            },
+
+            // ---------------- [Q21 - Q30: マニアック部位・口元・手足・フェティシズム深掘り] ----------------
+            {
+                id: 'q21', primaryElem: 'visual', depth: 2, category: '口元・歯並びフェチ',
+                question: '笑った時や喋っている時にチラッと見える「口元フェチ」ならどっち？',
+                choices: [
+                    { title: '小悪魔感あふれる「八重歯・ギザ歯（サメ歯）」', shortTag: '八重歯・ギザ歯派', emoji: '🦷', catchCopy: '噛みつかれたい小悪魔の牙', desc: 'ニカッと笑った時に覗く鋭い八重歯やギザ歯。少し生意気でワイルドな可愛さに、思わず首筋を差し出したくなる。', stats: { meet: 5, power: 8, speed: 8, arm: 7, field: 4, catch: 3, velo: 3, ctrl: 4, stam: 6 }, posPts: { closer: 4, right: 4, short: 3 }, pitchType: { dir: 'left', name: '噛みつきスライダー', add: 2 }, elem: { visual: 3, gap: 2, lead: 2, care: 0, thrill: 2, pure: 0 }, blueToku: { name: '積極打法', desc: '【獲物に噛みつく初球攻撃】ギザ歯の肉食系ヒロインのように、甘い球が来たら迷わず食らいつく。' } },
+                    { title: '艶やかで蠱惑的な「舌ピ・長い舌・ぷるぷる唇」', shortTag: '艶唇・舌フェチ派', emoji: '👅', catchCopy: '濡れた光沢と蠱惑の舌先', desc: 'ペロッと唇を舐める仕草や、キラリと光る舌ピアス。視覚だけで粘膜の湿度や艶めかしさが伝わってくるフェティシズム。', stats: { meet: 6, power: 6, speed: 5, arm: 6, field: 6, catch: 6, velo: 2, ctrl: 8, stam: 5 }, posPts: { reliever: 5, catcher: 3, third: 3 }, pitchType: { dir: 'down', name: 'ナックル', add: 3 }, elem: { visual: 3, gap: 0, lead: 1, care: 0, thrill: 5, pure: 0 }, pitchBlueToku: { name: '変幻自在', desc: '【妖艶なる舌先の揺らぎ】予測不能な変化球のコンビネーションで打者のタイミングを完全に翻弄する。' } }
+                ]
+            },
+            {
+                id: 'q22', primaryElem: 'visual', depth: 3, category: '局所・秘部パーツフェチ',
+                question: '普段は隠れているのに、ふとした瞬間に露出する「局所パーツ」で興奮するのは？',
+                choices: [
+                    { title: 'ノースリーブや髪を結ぶ時に覗く「無防備な脇」', shortTag: '無防備な脇フェチ派', emoji: '💪', catchCopy: '腕を上げた刹那の聖域', desc: '伸びをした瞬間やつり革を掴んだ時に露わになる脇のライン。本人が無自覚であればあるほど視覚的スリルが跳ね上がる。', stats: { meet: 8, power: 4, speed: 7, arm: 6, field: 8, catch: 5, velo: 1, ctrl: 8, stam: 4 }, posPts: { second: 5, short: 3, center: 3 }, pitchType: { dir: 'right', name: 'インズバッ直球', add: 2 }, elem: { visual: 4, gap: 1, lead: 1, care: 0, thrill: 3, pure: 0 }, blueToku: { name: 'インコースヒッター', desc: '【脇を締めた極意】打者の懐（脇の下）へ食い込んでくる厳しい内角球を、驚異的な執念でさばき切る。' } },
+                    { title: '靴や靴下を脱いだ瞬間の「素足の裏・足指」', shortTag: '素足・足裏フェチ派', emoji: '🦶', catchCopy: '桜色の足裏と無垢な指先', desc: 'ローファーやブーツを脱いだ後の、少し蒸れたストッキングのつま先や、柔らかそうな桜色の足裏・ペディキュアへの執着。', stats: { meet: 5, power: 4, speed: 9, arm: 5, field: 7, catch: 7, velo: 1, ctrl: 7, stam: 6 }, posPts: { center: 4, catcher: 4, left: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 4, gap: 0, lead: 0, care: 2, thrill: 3, pure: 0 }, blueToku: { name: 'ローボールヒッター', desc: '【足元への異常な集中力】地面すれすれのワンバウンドしそうな低め変化球に異常な強さを発揮する。' } }
+                ]
+            },
+            {
+                id: 'q23', primaryElem: 'lead', depth: 3, category: '拘束・支配シチュエーション',
+                question: '「身動きが取れない・自由を奪う（奪われる）」シチュエーションならどっち？',
+                choices: [
+                    { title: '壁ドン・手首押さえつけで「逃げ場をなくして迫る」', shortTag: '手首ロック・支配派', emoji: '🧱', catchCopy: '逃げ場ゼロの絶対的プレッシャー', desc: '片手で両手首を頭上にロックし、吐息がروく距離まで顔を近づけて、相手が観念して目を閉じる瞬間を味わう。', stats: { meet: 4, power: 9, speed: 6, arm: 9, field: 5, catch: 3, velo: 4, ctrl: 4, stam: 7 }, posPts: { closer: 5, third: 4, first: 3 }, pitchType: { dir: 'down', name: 'パワーフォーク', add: 2 }, elem: { visual: 1, gap: 1, lead: 5, care: 0, thrill: 2, pure: 0 }, pitchBlueToku: { name: '奪三振', desc: '【逃げ場なき壁ドン投球】追い込んだら最後、圧倒的な球威で打者の手足を縫い止めて三振に斬って取る。' } },
+                    { title: 'リボンや手錠・縄で「自分が拘束されて責められる」', shortTag: '拘束され・被虐派', emoji: '🎀', catchCopy: '抵抗不能の甘美なる降伏', desc: '両手を縛られて抵抗できない状態で、相手のペースでじっくりと焦らされ、弄ばれる背徳感と解放感。', stats: { meet: 7, power: 4, speed: 3, arm: 4, field: 7, catch: 9, velo: 1, ctrl: 8, stam: 8 }, posPts: { catcher: 5, reliever: 4, second: 3 }, pitchType: { dir: 'downleft', name: 'スローカーブ', add: 3 }, elem: { visual: 1, gap: 1, lead: 0, care: 2, thrill: 5, pure: 0 }, blueToku: { name: '粘り打ち', desc: '【縛られた状態からの快感】2ストライクに追い込まれ、身動きが取れなくなってからが本当の恍惚タイム。' }, redToku: { name: '縛りプレイ癖', desc: '余裕のあるカウントでは淡白だが、不利なカウントになるほど目が輝き出す。' } }
+                ]
+            },
+            {
+                id: 'q24', primaryElem: 'care', depth: 3, category: '母性・退行・依存フェチ',
+                question: '心の奥底にある「甘え・依存の究極形」として惹かれるのは？',
+                choices: [
+                    { title: '年下や同い年にも関わらず溢れ出る「圧倒的バブみ・母性」', shortTag: 'バブみ・オギャり派', emoji: '🍼', catchCopy: '理性を溶かす聖母への退行', desc: '年齢に関係なく、すべてを許して頭を撫でてくれる深い母性に触れ、プライドを捨てて赤ちゃん返り（オギャる）したい願望。', stats: { meet: 7, power: 5, speed: 4, arm: 4, field: 6, catch: 10, velo: 1, ctrl: 7, stam: 7 }, posPts: { catcher: 5, first: 4, left: 3 }, pitchType: { dir: 'down', name: 'パーム', add: 2 }, elem: { visual: 0, gap: 2, lead: 0, care: 5, thrill: 1, pure: 1 }, blueToku: { name: 'キャッチャー◎', desc: '【球界のビッグマザー】どんなに荒れ狂う暴れん坊ピッチャーも、バブみあふれるリードで落ち着かせる。' } },
+                    { title: '自分がいないと生きられない「ダメ人間化・ヒモ飼育」', shortTag: 'ダメ人間飼育・共依存派', emoji: '🏠', catchCopy: '社会性を溶かす蜜月の檻', desc: '「もう仕事なんて行かなくていいよ、私が全部養ってあげるから…」と甘やかされ続け、二人だけの世界に閉じこもる快楽。', stats: { meet: 6, power: 7, speed: 2, arm: 4, field: 3, catch: 6, velo: 1, ctrl: 6, stam: 3 }, posPts: { first: 5, left: 5, reliever: 2 }, pitchType: { dir: 'downright', name: 'シンカー', add: 2 }, elem: { visual: 0, gap: 0, lead: 1, care: 4, thrill: 4, pure: 0 }, blueToku: { name: 'ホーム死守', desc: '【引きこもりの聖域】本塁（自宅）への執着心が凄まじく、ホームベース上のクロスプレーでは絶対に退かない。' }, redToku: { name: '寸前×', desc: 'あと一歩で勝利（自立）という場面になると、甘えが出て足を引っ張ってしまうことがある。' } }
+                ]
+            },
+            {
+                id: 'q25', primaryElem: 'visual', depth: 2, category: '濡れ・透け・アクシデント',
+                question: '天候やハプニングによる「視覚的アクシデント」で最高なのは？',
+                choices: [
+                    { title: '突然のゲリラ豪雨で「ずぶ濡れ＆透ける白シャツ」', shortTag: '雨宿り・濡れ透け派', emoji: '🌧️', catchCopy: '雨粒が浮かび上がらせる輪郭', desc: '雨宿りで駆け込んだ軒先。肌に張り付いた白いブラウスからうっすら透けるインナーと、滴る水滴を拭う仕草。', stats: { meet: 7, power: 5, speed: 7, arm: 5, field: 8, catch: 6, velo: 2, ctrl: 8, stam: 6 }, posPts: { center: 4, second: 4, starter: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 4, gap: 1, lead: 0, care: 1, thrill: 1, pure: 3 }, blueToku: { name: '雨天○', desc: '【ずぶ濡れ覚醒モード】雨が降り出すと視界と集中力が通常の2倍に跳ね上がり、打率・防御率が劇的に向上する。' } },
+                    { title: '強風や階段での「スカートめくれ・パンチラの刹那」', shortTag: '突風ラッキースケベ派', emoji: '🍃', catchCopy: '0.5秒の奇跡を捉える動体視力', desc: '春の突風でふわりと舞い上がるスカートと、「きゃっ！」と手で押さえる王道ラッキースケベの瞬間にすべてを懸ける。', stats: { meet: 9, power: 4, speed: 9, arm: 5, field: 7, catch: 4, velo: 1, ctrl: 6, stam: 4 }, posPts: { short: 4, center: 4, left: 3 }, pitchType: { dir: 'left', name: '高速スライダー', add: 2 }, elem: { visual: 4, gap: 1, lead: 0, care: 0, thrill: 2, pure: 2 }, blueToku: { name: '初球○', desc: '【0.5秒のラッキースケベ動体視力】一瞬の風のいたずら（甘い初球）を絶対に見逃さず捉える。' } }
+                ]
+            },
+            {
+                id: 'q26', primaryElem: 'thrill', depth: 3, category: '超常シチュエーション・妄想特権',
+                question: 'もし「背徳の特殊能力」を1つだけ手に入れられるとしたらどっちを選ぶ？',
+                choices: [
+                    { title: '自分以外のすべてがピタリと止まる「時間停止」', shortTag: '時間停止ロマン派', emoji: '⏱️', catchCopy: '静止した世界を独り占め', desc: 'ストップウォッチを押した瞬間、周囲の時間が完全にフリーズ。誰にも気づかれずいたずらや観察し放題の絶対特権。', stats: { meet: 8, power: 5, speed: 10, arm: 5, field: 8, catch: 5, velo: 2, ctrl: 9, stam: 4 }, posPts: { center: 5, short: 4, closer: 3 }, pitchType: { dir: 'down', name: '超スローボール', add: 3 }, elem: { visual: 3, gap: 0, lead: 4, care: 0, thrill: 4, pure: 0 }, blueToku: { name: '電光石火', desc: '【時を止めるベースランニング】相手野手が止まって見えるほどの神速スタートで盗塁を成功させる。' }, pitchBlueToku: { name: 'クイック○', desc: '時間を止めたかのような超高速クイックモーションで走者を釘付けにする。' } },
+                    { title: '相手の認識やルールを書き換える「催眠・常識改変」', shortTag: '催眠・常識改変派', emoji: '🌀', catchCopy: '世界のルールすら思いのまま', desc: '高飛車なヒロインも風紀委員も、指を鳴らすだけで「これが当たり前の世界」と思い込ませてしまう禁断の支配力。', stats: { meet: 6, power: 7, speed: 4, arm: 6, field: 6, catch: 7, velo: 1, ctrl: 10, stam: 6 }, posPts: { reliever: 5, catcher: 4, third: 3 }, pitchType: { dir: 'downright', name: 'シンカー', add: 3 }, elem: { visual: 0, gap: 2, lead: 5, care: 0, thrill: 5, pure: 0 }, pitchBlueToku: { name: '幻惑', desc: '【球審すら惑わす常識改変】ボール1個分外れた球をストライクゾーンに見せかける催眠的投球術。' }, blueToku: { name: 'かく乱', desc: '相手守備陣の常識を書き換え、平凡なゴロでもパニックに陥らせる。' } }
+                ]
+            },
+            {
+                id: 'q27', primaryElem: 'gap', depth: 2, category: '和装・伝統美と崩れ',
+                question: '和服・着物フェチとして、より色気を感じるのはどっち？',
+                choices: [
+                    { title: '夏祭りの浴衣から覗く「抜いた衣紋（うなじ）と下駄の素足」', shortTag: '夏祭り浴衣・うなじ派', emoji: '🎆', catchCopy: '夜風に揺れる浴衣の襟元', desc: 'いつもと違うまとめ髪に浴衣姿。少し歩きにくそうに鼻緒を気にする素足と、花火の光に照らされるうなじの白さ。', stats: { meet: 8, power: 4, speed: 6, arm: 5, field: 8, catch: 7, velo: 1, ctrl: 8, stam: 5 }, posPts: { second: 4, short: 4, left: 3 }, pitchType: { dir: 'downleft', name: 'スローカーブ', add: 2 }, elem: { visual: 3, gap: 2, lead: 0, care: 1, thrill: 0, pure: 4 }, blueToku: { name: 'お祭り男', desc: '【夏祭りの大花火】大観衆が集まるビッグゲームやイベント試合で、夜空を焦がす快音を響かせる。' } },
+                    { title: '凛とした巫女装束・袴が「少し着崩れて覗く肌」', shortTag: '巫女装束・着崩れ派', emoji: '⛩️', catchCopy: '神聖なる装束のほころび', desc: '本来は清廉潔白で肌を見せない巫女服や弓道着が、激しい動きやアクシデントで着崩れ、白い肩や太ももが露わになる背徳美。', stats: { meet: 5, power: 8, speed: 6, arm: 9, field: 5, catch: 4, velo: 3, ctrl: 6, stam: 7 }, posPts: { right: 5, starter: 4, third: 3 }, pitchType: { dir: 'down', name: '縦スライダー', add: 2 }, elem: { visual: 3, gap: 3, lead: 1, care: 0, thrill: 3, pure: 0 }, blueToku: { name: 'レーザービーム', desc: '【破魔矢のダイレクト送球】神聖なる弓道・巫女の精神統一から、外野より剛速球の返球を突き刺す。' } }
+                ]
+            },
+            {
+                id: 'q28', primaryElem: 'lead', depth: 3, category: 'プライド崩壊・立場逆転',
+                question: '高貴・強気なヒロインの「立場逆転ドラマ」として燃えるのは？',
+                choices: [
+                    { title: '高飛車な悪役令嬢・女上司が「没落してこちらに縋りつく」', shortTag: '高飛車没落・立場逆転派', emoji: '🥀', catchCopy: '誇り高き薔薇の陥落', desc: 'かつて見下してきた高慢なお嬢様やエリート上司が、立場を失い涙目で「なんでもしますから…」とプライドを捨てる瞬間。', stats: { meet: 5, power: 9, speed: 5, arm: 7, field: 5, catch: 4, velo: 3, ctrl: 5, stam: 7 }, posPts: { third: 4, closer: 4, first: 4 }, pitchType: { dir: 'down', name: 'フォーク', add: 3 }, elem: { visual: 0, gap: 4, lead: 5, care: 0, thrill: 3, pure: 0 }, blueToku: { name: 'ダメ押し', desc: '【プライドをへし折る追撃弾】リードしている終盤、相手の戦意を完全に喪失させる容赦ない一撃を放つ。' } },
+                    { title: '正義感の強い女騎士・ヒロインが「快楽や弱みで堕ちる（悪堕ち）」', shortTag: '女騎士・悪堕ち派', emoji: '🖤', catchCopy: '聖なる正義が黒く染まる夜', desc: '気高い使命感を持っていたヒロインが、敵の甘い罠や快楽に抗えず、ダークサイドの妖艶な衣装と性格に染まってしまう展開。', stats: { meet: 6, power: 8, speed: 7, arm: 8, field: 4, catch: 3, velo: 3, ctrl: 4, stam: 6 }, posPts: { left: 4, reliever: 4, third: 3 }, pitchType: { dir: 'downleft', name: '魔球スラーブ', add: 3 }, elem: { visual: 2, gap: 3, lead: 3, care: 0, thrill: 5, pure: 0 }, blueToku: { name: '悪球打ち', desc: '【ダークサイドの誘惑】ストライクゾーンから大きく外れた甘い悪球に手を出し、強引に長打へ変えてしまう。' } }
+                ]
+            },
+            {
+                id: 'q29', primaryElem: 'visual', depth: 3, category: '特殊素材・ボンデージ衣装',
+                question: 'よりディープな「特殊素材・ランジェリー衣装」としてそそられるのは？',
+                choices: [
+                    { title: '全身が艶やかに反射する「エナメル・ラバースーツ」', shortTag: 'ラバー・エナメル密着派', emoji: '✨', catchCopy: '第二の皮膚が放つ妖艶な光沢', desc: 'キュッと鳴るラバーの質感と、全身の凹凸を1ミリも隠さずピタリと包み込む近未来スーツやキャットスーツの極致。', stats: { meet: 5, power: 7, speed: 8, arm: 8, field: 7, catch: 3, velo: 3, ctrl: 6, stam: 6 }, posPts: { center: 4, closer: 4, short: 3 }, pitchType: { dir: 'left', name: '高速スライダー', add: 2 }, elem: { visual: 5, gap: 0, lead: 2, care: 0, thrill: 3, pure: 0 }, pitchBlueToku: { name: '球持ち○', desc: '【ラバーの吸い付き】指先に吸い付くようなリリースで、打者の手元までボールの出所を見せない。' } },
+                    { title: '太ももに金具が食い込む「ガーターベルト＆ストッキング」', shortTag: 'ガーターベルト派', emoji: '🎗️', catchCopy: '清楚なスカートの奥の武装', desc: '普段の制服やスーツの下に、実は大人びたレースのガーターベルトとストッキングを装着しているという秘密のギャップ。', stats: { meet: 7, power: 7, speed: 6, arm: 6, field: 6, catch: 6, velo: 2, ctrl: 8, stam: 5 }, posPts: { second: 4, right: 4, reliever: 3 }, pitchType: { dir: 'downright', name: 'サークルチェンジ', add: 2 }, elem: { visual: 4, gap: 2, lead: 1, care: 0, thrill: 3, pure: 0 }, blueToku: { name: '勝負師', desc: '【勝負下着の覚悟】ここ一番の得点圏でガーターベルトを締めるかのごとく集中力が極限に達する。' } }
+                ]
+            },
+            {
+                id: 'q30', primaryElem: 'care', depth: 2, category: '人外・異種族ヒロイン',
+                question: 'ファンタジーの「異種族・モンスター娘」と暮らすならどっち？',
+                choices: [
+                    { title: 'いたずら好きだけど精気を搾り取る「サキュバス（夢魔）娘」', shortTag: '小悪魔サキュバス派', emoji: '🦇', catchCopy: '毎晩逃れられない甘い悪夢', desc: 'コウモリ羽とハート型の尻尾を持ち、毎晩のように甘い誘惑で挑んでくるのに、実は純愛に弱いチョロかわサキュバス。', stats: { meet: 6, power: 8, speed: 7, arm: 6, field: 5, catch: 3, velo: 3, ctrl: 5, stam: 4 }, posPts: { closer: 5, left: 4, third: 3 }, pitchType: { dir: 'down', name: 'Vスライダー', add: 2 }, elem: { visual: 2, gap: 2, lead: 2, care: 0, thrill: 4, pure: 0 }, pitchBlueToku: { name: '奪三振', desc: '【精気を奪うドレイン投法】打者のバットから力を吸い取り、面白いように空振り三振を奪う。' }, redToku: { name: '回復△', desc: '毎晩のハッスルで精気を吸い取られがちなため、連戦になると少し疲れが残る。' } },
+                    { title: '全身で包み込んで溶かすように癒やす「スライム・粘体娘」', shortTag: '包容スライム娘派', emoji: '💧', catchCopy: 'ゼロ距離を超える完全密着', desc: '半透明のぷるぷるボディで全身を隙間なく包み込み、体温も形も相手に合わせてとろけさせてくれる究極の密着癒やし系。', stats: { meet: 7, power: 3, speed: 4, arm: 4, field: 9, catch: 10, velo: 1, ctrl: 8, stam: 8 }, posPts: { catcher: 5, second: 4, reliever: 4 }, pitchType: { dir: 'down', name: 'ナックル', add: 3 }, elem: { visual: 2, gap: 0, lead: 0, care: 5, thrill: 2, pure: 0 }, blueToku: { name: '守備職人', desc: '【スライム級の柔軟グラブ】どんなイレギュラーバウンドも柔軟な身体とグラブで吸い込むように捕球する。' } }
+                ]
+            },
+
+            // ---------------- [Q31 - Q40: 精神性・ギャップ・フェチシズムの深層] ----------------
+            {
+                id: 'q31', primaryElem: 'thrill', depth: 3, category: '医療・傷跡・庇護欲フェチ',
+                question: 'どこか儚げでミステリアスな「庇護欲・傷跡属性」ならどっち？',
+                choices: [
+                    { title: '片目を隠した「眼帯・包帯少女」のミステリアスな色気', shortTag: '眼帯・包帯フェチ派', emoji: '🩹', catchCopy: '隠された瞳と禁忌の疼き', desc: '白い眼帯や手首に巻かれた包帯。「これ、外してもいい…？」と二人きりの時だけその下を見せてくれる特別な儀式感。', stats: { meet: 6, power: 7, speed: 6, arm: 7, field: 6, catch: 5, velo: 2, ctrl: 7, stam: 5 }, posPts: { right: 4, reliever: 4, short: 3 }, pitchType: { dir: 'left', name: 'カットボール', add: 2 }, elem: { visual: 3, gap: 2, lead: 1, care: 2, thrill: 3, pure: 0 }, blueToku: { name: '意外性', desc: '【眼帯解放の邪気眼】普段は静かだが、眼帯を外したかのように突然規格外の打球を放つ。' } },
+                    { title: '薄幸で儚げな「病弱・深窓の令嬢」を看病して守る', shortTag: '薄幸・看病庇護派', emoji: '🥀', catchCopy: 'ガラス細工のような儚き微笑み', desc: '白いベッドの上で読書をしながら、自分が来た時だけパッと花のように微笑む少女。「私が一生守る」と誓いたくなる純愛。', stats: { meet: 8, power: 3, speed: 4, arm: 4, field: 7, catch: 9, velo: 1, ctrl: 9, stam: 3 }, posPts: { second: 4, first: 4, catcher: 3 }, pitchType: { dir: 'down', name: 'スローカーブ', add: 2 }, elem: { visual: 1, gap: 0, lead: 1, care: 5, thrill: 0, pure: 4 }, blueToku: { name: '代打○', desc: '【ガラスの天才】フル出場は難しくとも、ここぞの1打席にすべての生命力を燃やして快打を放つ。' }, redToku: { name: 'ケガしにくさ△', desc: '儚げな体質ゆえに、激しいクロスプレーには少し注意が必要。' } }
+                ]
+            },
+            {
+                id: 'q32', primaryElem: 'gap', depth: 2, category: 'ボーイッシュ・性別ギャップ',
+                question: '中性的な魅力や「性別を意識する瞬間」としてグッとくるのは？',
+                choices: [
+                    { title: '一人称「ボク」のボーイッシュ女子が「初めてスカートを履く日」', shortTag: 'ボクっ娘スカート派', emoji: '🧢', catchCopy: '親友が「女」に変わる瞬間', desc: '普段は男友達のようにサバサバしている短髪ボクっ娘が、デートの日に恥ずかしそうにスカート姿で現れる破壊力。', stats: { meet: 7, power: 6, speed: 9, arm: 8, field: 8, catch: 5, velo: 2, ctrl: 6, stam: 7 }, posPts: { center: 5, short: 4, third: 3 }, pitchType: { dir: 'right', name: 'ツーシーム', add: 2 }, elem: { visual: 1, gap: 5, lead: 0, care: 0, thrill: 0, pure: 3 }, blueToku: { name: '走塁○', desc: '【ボーイッシュな俊敏性】男勝りの脚力とセンスでダイヤモンドを駆け回る。' } },
+                    { title: '女の子以上に可憐で庇護欲をそそる「男の娘・女装美少年」', shortTag: '男の娘・背徳美派', emoji: '🎀', catchCopy: '性別を超越した禁断の可憐さ', desc: '「こんなに可愛いのに男の子だなんて…」という理性のバグと、自分だけがその秘密を知っている共犯的なスリル。', stats: { meet: 8, power: 4, speed: 8, arm: 5, field: 7, catch: 6, velo: 1, ctrl: 8, stam: 5 }, posPts: { second: 5, short: 4, reliever: 3 }, pitchType: { dir: 'downright', name: 'シンカー', add: 3 }, elem: { visual: 3, gap: 4, lead: 1, care: 0, thrill: 4, pure: 0 }, blueToku: { name: '流し打ち', desc: '【常識にとらわれない柔軟打法】右でも左でも固定観念を捨てた柔らかいバットコントロールで安打にする。' } }
+                ]
+            },
+            {
+                id: 'q33', primaryElem: 'lead', depth: 2, category: '体格差・身長差の美学',
+                question: '並んだ時の「身長差・体格差フェチ」として理想的なのは？',
+                choices: [
+                    { title: '175cm以上の「高身長・長身モデル体型女子」に見下ろされる', shortTag: '高身長・見下ろされ派', emoji: '🦒', catchCopy: '圧倒的脚長と包容のハグ', desc: 'すらりと伸びた長い脚と、ハグした時に自分の顔が相手の胸元に埋まる身長差。頼もしさと色気のハイブリッド。', stats: { meet: 5, power: 9, speed: 6, arm: 9, field: 5, catch: 5, velo: 4, ctrl: 5, stam: 8 }, posPts: { starter: 4, right: 4, first: 4 }, pitchType: { dir: 'down', name: 'フォーク', add: 3 }, elem: { visual: 4, gap: 1, lead: 0, care: 3, thrill: 1, pure: 0 }, pitchBlueToku: { name: '角度○', desc: '【高身長からの急降下】高いリリースポイントから投げ下ろす角度抜群の直球とフォーク。' } },
+                    { title: '頭ひとつ分小さい「ミニマム小柄女子」の頭をポンポンする', shortTag: 'ミニマム身長差派', emoji: '🐣', catchCopy: '歩幅を合わせる愛おしさ', desc: '見上げる角度が急になるほどの身長差。大きな手で頭を撫でたり、ひょいっと抱き上げられるサイズ感の愛おしさ。', stats: { meet: 8, power: 3, speed: 9, arm: 4, field: 8, catch: 6, velo: 1, ctrl: 8, stam: 4 }, posPts: { second: 4, short: 4, center: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 2, gap: 1, lead: 4, care: 1, thrill: 0, pure: 2 }, blueToku: { name: '選球眼', desc: '【コンパクトなストライクゾーン】小柄な構えでボール球を見極め、四球をもぎ取る。' } }
+                ]
+            },
+            {
+                id: 'q34', primaryElem: 'visual', depth: 2, category: '筋肉・引き締まった身体美',
+                question: '健康的な「筋肉・ボディメイク美」として目を奪われるのは？',
+                choices: [
+                    { title: 'うっすら縦線の入った「引き締まった腹筋・くびれ」', shortTag: '腹筋・くびれフェチ派', emoji: '🏋️‍♀️', catchCopy: '鍛え抜かれた黄金のウエスト', desc: 'ただ細いだけではない、ストイックに鍛えられた美しい腹筋の縦ラインと、キュッと締まったくびれの機能美。', stats: { meet: 6, power: 8, speed: 9, arm: 9, field: 8, catch: 5, velo: 3, ctrl: 6, stam: 8 }, posPts: { center: 5, right: 4, short: 3 }, pitchType: { dir: 'left', name: 'Hスライダー', add: 2 }, elem: { visual: 4, gap: 1, lead: 2, care: 0, thrill: 0, pure: 2 }, blueToku: { name: '体幹○', desc: '【鋼のコアマッスル】どんなに体勢を崩されても、強靭な腹筋と体幹で鋭い打球を飛ばす。' } },
+                    { title: '陸上選手やダンサーのような「躍動する太もも・ふくらはぎ」', shortTag: 'アスリート脚線美派', emoji: '👟', catchCopy: '地面を蹴り出す弾力と躍動', desc: 'スパッツやレーシングブルマから伸びる、引き締まりつつも女性らしい丸みを帯びたアスリートの脚線美。', stats: { meet: 6, power: 6, speed: 11, arm: 7, field: 7, catch: 4, velo: 3, ctrl: 5, stam: 9 }, posPts: { center: 5, left: 3, starter: 3 }, pitchType: { dir: 'down', name: 'スプリット', add: 2 }, elem: { visual: 4, gap: 0, lead: 1, care: 0, thrill: 1, pure: 2 }, blueToku: { name: '内野安打○', desc: '【スプリンターの爆発力】一塁到達まで3秒台前半の圧倒的脚力で内野陣を焦らせる。' } }
+                ]
+            },
+            {
+                id: 'q35', primaryElem: 'thrill', depth: 3, category: '嫉妬・脳破壊・独占の極致',
+                question: '恋愛における「スリルと独占欲の境界線」として本音に近いのは？',
+                choices: [
+                    { title: '絶対的な純愛主義！「他の男の影は1ミリも許さない完全独占」', shortTag: '完全純愛・独占派', emoji: '🛡️', catchCopy: '一点の曇りなき純白の聖域', desc: 'NTRや横恋慕なんて言語道断。お互いが初恋で最後の相手であり続ける、鉄壁の純愛と一途な信頼関係こそ至高。', stats: { meet: 7, power: 6, speed: 5, arm: 6, field: 8, catch: 9, velo: 2, ctrl: 9, stam: 7 }, posPts: { catcher: 4, starter: 4, first: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 0, gap: 0, lead: 2, care: 2, thrill: 0, pure: 6 }, blueToku: { name: '鉄壁', desc: '【純愛のブロック】ホームベース（愛する人）には指一本触れさせない気迫のディフェンス。' } },
+                    { title: '奪い合いや背徳のスパイス！「横恋慕・略奪・危うい三角関係」', shortTag: '略奪・背徳スリル派', emoji: '⚡', catchCopy: '理性を焼き尽くす禁断の果実', desc: '誰かのものになりかけている子を振り向かせる略奪のスリルや、嫉妬で胸が締め付けられるドラマチックな刺激に惹かれる。', stats: { meet: 5, power: 9, speed: 8, arm: 8, field: 4, catch: 3, velo: 3, ctrl: 4, stam: 6 }, posPts: { closer: 5, third: 4, left: 3 }, pitchType: { dir: 'downleft', name: '縦スライダー', add: 3 }, elem: { visual: 0, gap: 2, lead: 3, care: 0, thrill: 6, pure: 0 }, blueToku: { name: '略奪者（盗塁◎）', desc: '【禁断のベーススチール】相手バッテリーの警戒をかいくぐり、鮮やかな手口で次の塁を奪い取る。' } }
+                ]
+            },
+            {
+                id: 'q36', primaryElem: 'gap', depth: 2, category: '表情・泣き顔・感情の昂ぶり',
+                question: '感情が昂ぶった時の「特別な表情フェチ」として刺さるのは？',
+                choices: [
+                    { title: '強がりながら必死に涙をこらえる「悔し泣き・堪え顔」', shortTag: '強がり堪え泣き派', emoji: '😣', catchCopy: '震える唇とこぼれ落ちる一滴', desc: '「泣いてないもん…！」と唇を噛みしめながら、まつ毛の先からポロポロと涙がこぼれ落ちてしまう健気でいじらしい姿。', stats: { meet: 7, power: 6, speed: 6, arm: 6, field: 7, catch: 7, velo: 2, ctrl: 7, stam: 8 }, posPts: { starter: 4, third: 4, second: 3 }, pitchType: { dir: 'right', name: 'シュート', add: 2 }, elem: { visual: 1, gap: 4, lead: 2, care: 2, thrill: 0, pure: 2 }, blueToku: { name: '根性○', desc: '【涙を拭って立つマウンド】どんなに打ち込まれそうになっても、唇を噛みしめて最後の一球まで投げ抜く。' } },
+                    { title: '理性が飛んでトロンと蕩けた「恍惚・ハート目（アヘ顔一歩手前）」', shortTag: '理性崩壊・蕩け顔派', emoji: '😵‍💫', catchCopy: '快楽に溶ける無防備な瞳', desc: '普段の知性やクールさが完全に吹き飛び、焦点の合わない潤んだ瞳とだらしない口元でこちらを見つめてくる瞬間。', stats: { meet: 4, power: 9, speed: 5, arm: 7, field: 3, catch: 3, velo: 3, ctrl: 3, stam: 6 }, posPts: { first: 4, left: 4, closer: 4 }, pitchType: { dir: 'down', name: 'SFF', add: 3 }, elem: { visual: 2, gap: 3, lead: 3, care: 0, thrill: 4, pure: 0 }, blueToku: { name: '固め打ち', desc: '【ゾーン突入の恍惚状態】一度快感（ヒット）の味を覚えると、理性が飛んだかのように固め打ちする。' } }
+                ]
+            },
+            {
+                id: 'q37', primaryElem: 'visual', depth: 2, category: '手指・ネイル・末端フェチ',
+                question: '視界に入りやすい「手元・指先のフェティシズム」ならどっち？',
+                choices: [
+                    { title: '白魚のように細く長い「華奢な素爪・綺麗な指先」', shortTag: '華奢な指先・素爪派', emoji: '🖐️', catchCopy: 'ピアノを奏でるような繊細美', desc: '派手な装飾のない、桜色で整えられた素爪と細くしなやかな指。その指先が自分の頬や指にそっと触れる瞬間の繊細さ。', stats: { meet: 8, power: 2, speed: 6, arm: 5, field: 9, catch: 8, velo: 1, ctrl: 10, stam: 4 }, posPts: { short: 5, second: 4, reliever: 3 }, pitchType: { dir: 'downright', name: 'サークルチェンジ', add: 3 }, elem: { visual: 3, gap: 0, lead: 0, care: 2, thrill: 0, pure: 4 }, pitchBlueToku: { name: 'リリース○', desc: '【白魚の指先】指先の感覚が極限まで鋭敏で、ボールの縫い目を1ミリ単位で操る。' } },
+                    { title: 'ギャルや大人女子の「華やかなネイル・指輪・手首アクセ」', shortTag: '華やかネイル・ギャル派', emoji: '💅', catchCopy: '視覚を刺激する煌びやかな指先', desc: 'キラキラに彩られたジェルネイルやピンキーリング。少し長い爪で首筋や背中をカリカリとなぞられるゾクゾク感。', stats: { meet: 5, power: 8, speed: 7, arm: 7, field: 5, catch: 4, velo: 2, ctrl: 5, stam: 6 }, posPts: { third: 4, right: 4, closer: 3 }, pitchType: { dir: 'left', name: 'ナックルカーブ', add: 2 }, elem: { visual: 4, gap: 1, lead: 1, care: 0, thrill: 3, pure: 0 }, blueToku: { name: 'レーザービーム', desc: '【ネイルが煌めく強肩】華やかなスローイングフォームから、鋭く指先にかかった送球を放つ。' } }
+                ]
+            },
+            {
+                id: 'q38', primaryElem: 'care', depth: 2, category: '看病・弱り目に祟り目シチュ',
+                question: '風邪を引いて寝込んだ時の「看病シチュエーション」で理想なのは？',
+                choices: [
+                    { title: 'おでこコツンで熱を測り、お粥を「あーん」してくれる献身看病', shortTag: 'おでこコツン献身看病派', emoji: '🥣', catchCopy: '熱で潤む視界に映る天使', desc: '「もう、無理するからだよ…」と心配そうに眉を下げ、おでこを合わせて熱を測ってくれる王道にして至高の癒やし。', stats: { meet: 7, power: 4, speed: 5, arm: 5, field: 7, catch: 9, velo: 1, ctrl: 8, stam: 8 }, posPts: { catcher: 5, second: 3, starter: 3 }, pitchType: { dir: 'down', name: 'パーム', add: 2 }, elem: { visual: 0, gap: 1, lead: 0, care: 5, thrill: 0, pure: 4 }, blueToku: { name: 'ケガしにくさ○', desc: '【愛の栄養補給】万全のケアと看病により、体調不良や故障を未然に防ぐ。' } },
+                    { title: '看病に来たはずなのに、熱で無防備な姿に「いたずら・誘惑」される', shortTag: '看病いたずら誘惑派', emoji: '🌡️', catchCopy: '熱に浮かされた密室の悪戯', desc: '抵抗できないのをいいことに、「熱のせいでドキドキしてるのかな？」と耳元で囁きながら距離を詰めてくる背徳看病。', stats: { meet: 6, power: 7, speed: 6, arm: 6, field: 5, catch: 4, velo: 2, ctrl: 6, stam: 5 }, posPts: { reliever: 4, left: 4, third: 3 }, pitchType: { dir: 'downright', name: 'スクリュー', add: 2 }, elem: { visual: 1, gap: 2, lead: 2, care: 2, thrill: 4, pure: 0 }, blueToku: { name: 'ダメ押し', desc: '【弱り目に祟り目打法】相手投手が疲れを見せた瞬間を見逃さず、畳みかけるような連打を浴びせる。' } }
+                ]
+            },
+            {
+                id: 'q39', primaryElem: 'gap', depth: 2, category: 'ギャル属性の二面性',
+                question: '華やかな「ギャル属性」として、より心を鷲掴みにされるのは？',
+                choices: [
+                    { title: '見た目は派手なのに、中身は「超一途で家庭的なオタクに優しいギャル」', shortTag: '一途で家庭的ギャル派', emoji: '🌺', catchCopy: '派手な見た目と純情なハート', desc: '金髪にルーズソックスなのに、料理上手で恋愛には驚くほどウブ。誰にでも分け隔てなく接してくれる太陽のような存在。', stats: { meet: 8, power: 6, speed: 7, arm: 6, field: 7, catch: 8, velo: 2, ctrl: 7, stam: 7 }, posPts: { catcher: 4, third: 4, center: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 2, gap: 4, lead: 0, care: 4, thrill: 0, pure: 3 }, blueToku: { name: 'ムード○', desc: '【誰にでも優しい太陽ギャル】ベンチにいるだけで陰キャからベテランまで全員のモチベーションを爆上げする。' } },
+                    { title: '圧倒的陽キャオーラでグイグイ引っ張る「黒ギャル・肉食系ギャル」', shortTag: '肉食系・黒ギャル派', emoji: '🌴', catchCopy: '常識を吹き飛ばす灼熱のテンション', desc: '日焼け肌に派手なメイク、距離感ゼロのボディタッチでこちらの理性を強引にねじ伏せてくるパワフルな色気。', stats: { meet: 4, power: 10, speed: 8, arm: 9, field: 4, catch: 3, velo: 3, ctrl: 3, stam: 8 }, posPts: { right: 5, first: 4, closer: 4 }, pitchType: { dir: 'down', name: 'パワーフォーク', add: 2 }, elem: { visual: 4, gap: 0, lead: 4, care: 0, thrill: 3, pure: 0 }, blueToku: { name: 'パワーヒッター', desc: '【灼熱のギャルバイブス】細かいセオリーを吹き飛ばす豪快なフルスイングで場外弾を放つ。' } }
+                ]
+            },
+            {
+                id: 'q40', primaryElem: 'lead', depth: 3, category: '言葉責め・メンタル支配',
+                question: '言葉による「メンタルへの刺激」としてゾクゾクするのは？',
+                choices: [
+                    { title: '冷たい目と丁寧な敬語での「静かなる罵倒・見下し言葉責め」', shortTag: '敬語罵倒・見下し派', emoji: '❄️', catchCopy: '丁寧な言葉で抉られる快感', desc: '「本当に救いようのない変態ですね…」と、乱暴な言葉ではなく、美しい敬語と氷のような視線で蔑まれるマゾヒズム。', stats: { meet: 7, power: 4, speed: 6, arm: 6, field: 8, catch: 6, velo: 2, ctrl: 10, stam: 5 }, posPts: { reliever: 5, second: 4, short: 3 }, pitchType: { dir: 'left', name: 'カットボール', add: 3 }, elem: { visual: 1, gap: 2, lead: 0, care: 0, thrill: 5, pure: 0 }, pitchBlueToku: { name: '精密機械', desc: '【丁寧な敬語での処刑】1ミリも甘さを許さない冷徹なコントロールで、打者を言葉通り手玉に取る。' } },
+                    { title: '恥ずかしい言葉や好意を「自分の口から言わせる（羞恥誘導）」', shortTag: '羞恥誘導・言わせ派', emoji: '😳', catchCopy: '耳まで赤くして紡ぐ降伏宣言', desc: '「ほら、どうしてほしいかちゃんと自分の口で言ってみ？」と意地悪く問いかけ、相手が顔を真っ赤にしておねだりする瞬間。', stats: { meet: 6, power: 8, speed: 5, arm: 8, field: 6, catch: 5, velo: 3, ctrl: 7, stam: 7 }, posPts: { closer: 4, third: 4, catcher: 3 }, pitchType: { dir: 'down', name: 'スプリット', add: 2 }, elem: { visual: 0, gap: 3, lead: 5, care: 0, thrill: 3, pure: 0 }, blueToku: { name: '威圧感', desc: '【降伏を迫るプレッシャー】相手バッテリーに「勝負するか敬遠するか」の究極の羞恥選択を突きつける。' } }
+                ]
+            },
+
+            // ---------------- [Q41 - Q50: ニッチなフェチ・五感・状況特化] ----------------
+            {
+                id: 'q41', primaryElem: 'visual', depth: 2, category: '水着・露出の美学',
+                question: '海やプールでの「水着フェティシズム」として究極の2択を選ぶなら？',
+                choices: [
+                    { title: '布面積の小ささと紐の危うさがたまらない「マイクロビキニ・紐ビキニ」', shortTag: '紐ビキニ・露出派', emoji: '👙', catchCopy: '結び目ひとつに託された運命', desc: '圧倒的な肌面積と、細い紐一本でギリギリ保たれている緊張感。王道にして最大の視覚的インパクト。', stats: { meet: 4, power: 9, speed: 8, arm: 7, field: 4, catch: 3, velo: 3, ctrl: 4, stam: 6 }, posPts: { right: 4, left: 4, closer: 3 }, pitchType: { dir: 'down', name: 'ナックルカーブ', add: 2 }, elem: { visual: 5, gap: 0, lead: 1, care: 0, thrill: 3, pure: 0 }, blueToku: { name: 'プルヒッター', desc: '【限界ギリギリのファウルライン】切れそうで切れない紐ビキニのごとく、ポール際ギリギリへ本塁打を叩き込む。' } },
+                    { title: '密着感と背中のラインが強調される「競泳水着・スク水」', shortTag: '競泳水着・スク水派', emoji: '🏊‍♀️', catchCopy: '水を弾く撥水と密着の芸術', desc: '露出は少ないのに、水を弾く光沢素材とハイレグカット、背中のクロスラインが身体の凹凸をビビッドに浮き彫りにする。', stats: { meet: 8, power: 4, speed: 8, arm: 6, field: 9, catch: 6, velo: 2, ctrl: 8, stam: 7 }, posPts: { center: 5, short: 4, starter: 3 }, pitchType: { dir: 'left', name: '高速スライダー', add: 2 }, elem: { visual: 4, gap: 1, lead: 0, care: 0, thrill: 2, pure: 2 }, blueToku: { name: 'レーザービーム', desc: '【水の抵抗ゼロの送球軌道】競泳水着のようなストリームラインで、空気抵抗を切り裂く返球を見せる。' } }
+                ]
+            },
+            {
+                id: 'q42', primaryElem: 'pure', depth: 2, category: '生理現象・可愛いハプニング',
+                question: '静かな空間で起きてしまった「愛おしいハプニング」として萌えるのは？',
+                choices: [
+                    { title: '真面目な空気の中で「お腹がグゥ〜ッと鳴って耳まで赤くなる」', shortTag: 'お腹グゥ〜ッ赤面派', emoji: '🍙', catchCopy: '静寂を破る愛おしい腹時計', desc: '図書室やシリアスな場面で、クールな子のお腹から可愛い音が鳴り、両手でお腹を押さえて俯くギャップ。', stats: { meet: 8, power: 5, speed: 6, arm: 5, field: 7, catch: 7, velo: 1, ctrl: 8, stam: 6 }, posPts: { second: 4, left: 4, catcher: 3 }, pitchType: { dir: 'downright', name: 'チェンジアップ', add: 2 }, elem: { visual: 0, gap: 4, lead: 0, care: 2, thrill: 0, pure: 4 }, blueToku: { name: 'チャンスメーカー', desc: '【静寂を破る快音】緊迫した投手戦の均衡を、お腹の音のような快音で一気に破る。' } },
+                    { title: '小さな「くしゃみ・しゃっくり」が止まらなくて涙目になる', shortTag: 'くしゃみ・しゃっくり派', emoji: '🤧', catchCopy: '小動物のような無防備な震え', desc: '「くしゅんっ」という小動物のような可愛いくしゃみや、しゃっくりが止まらず「ひゃっ…」と困り果てている姿。', stats: { meet: 7, power: 3, speed: 8, arm: 4, field: 8, catch: 6, velo: 1, ctrl: 7, stam: 5 }, posPts: { short: 4, center: 4, second: 3 }, pitchType: { dir: 'left', name: 'スローカーブ', add: 2 }, elem: { visual: 1, gap: 2, lead: 1, care: 3, thrill: 0, pure: 3 }, blueToku: { name: '内野安打○', desc: '【予測不能な小動物バウンド】ピョコピョコと跳ねる絶妙なボテボテのゴロで内野安打を稼ぐ。' } }
+                ]
+            },
+            {
+                id: 'q43', primaryElem: 'care', depth: 2, category: '寝顔・睡眠時の無防備さ',
+                question: '隣で眠っている時の「寝相・寝言フェチ」として幸せを感じるのは？',
+                choices: [
+                    { title: '無意識にこちらの服の裾をギュッと掴んで離さない「いじらしい寝姿」', shortTag: '裾ギュッ寝顔派', emoji: '🛌', catchCopy: '夢の中でも離さない小さな手', desc: '眠っている間も無意識にこちらの袖や裾を指先でちょこんと掴んでおり、安心しきった寝息を立てている純真さ。', stats: { meet: 7, power: 4, speed: 5, arm: 5, field: 8, catch: 9, velo: 1, ctrl: 9, stam: 7 }, posPts: { catcher: 4, second: 4, starter: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 1, gap: 1, lead: 1, care: 4, thrill: 0, pure: 4 }, blueToku: { name: '捕球◎', desc: '【夢の中でも離さないグラブ】一度ミットに収めたボールは、どんな激しい衝突があっても絶対にこぼさない。' } },
+                    { title: 'お腹や太ももがはだけて、こちらに足を絡めてくる「ダイナミック寝相」', shortTag: 'はだけ寝相・密着派', emoji: '🦵', catchCopy: '無防備すぎる体温の密着', desc: 'パジャマがめくれてお腹が見えていたり、抱き枕代わりにして全身でしがみついてくる無防備な色気と体温。', stats: { meet: 6, power: 7, speed: 6, arm: 6, field: 5, catch: 6, velo: 2, ctrl: 5, stam: 8 }, posPts: { first: 4, left: 4, third: 3 }, pitchType: { dir: 'right', name: 'シュート', add: 2 }, elem: { visual: 3, gap: 1, lead: 0, care: 3, thrill: 1, pure: 2 }, blueToku: { name: '体当たり', desc: '【抱き枕タックル】全身の重みと体温をぶつけるダイナミックなプレーで道を切り開く。' } }
+                ]
+            },
+            {
+                id: 'q44', primaryElem: 'thrill', depth: 3, category: 'スリル・公共の場での秘密',
+                question: '周囲に人がいる状況での「秘密のスキンシップ」ならどっち？',
+                choices: [
+                    { title: '満員電車やエレベーターでの「ゼロ距離の密着と熱い吐息」', shortTag: '密室ゼロ距離密着派', emoji: '🚃', catchCopy: '逃げ場のない鼓動のシンクロ', desc: '不可抗力で身体がぴったりと密着し、お互いの心臓の音や吐息がダイレクトに伝わる中で、視線だけで会話を交わす瞬間。', stats: { meet: 6, power: 6, speed: 5, arm: 6, field: 7, catch: 7, velo: 2, ctrl: 8, stam: 6 }, posPts: { reliever: 5, catcher: 4, second: 3 }, pitchType: { dir: 'right', name: '高速シュート', add: 2 }, elem: { visual: 1, gap: 1, lead: 1, care: 1, thrill: 5, pure: 1 }, pitchBlueToku: { name: '対ピンチ◎', desc: '【満員電車の心臓】満塁のギュウギュウ詰めピンチになるほど、心拍数が安定して最高の球がいく。' } },
+                    { title: '会議中や授業中、机の下で「こっそり指や足先を絡ませる」', shortTag: '机の下の秘密接触派', emoji: '🪑', catchCopy: '上半身は真面目、下半身は共犯', desc: 'テーブルの上では澄ました顔で話を聞いているのに、死角になっている机の下では手をつないだり足先で触れ合う背徳感。', stats: { meet: 8, power: 5, speed: 7, arm: 5, field: 8, catch: 6, velo: 1, ctrl: 9, stam: 5 }, posPts: { second: 5, short: 4, reliever: 3 }, pitchType: { dir: 'downright', name: 'シンカー', add: 2 }, elem: { visual: 0, gap: 3, lead: 2, care: 0, thrill: 5, pure: 0 }, blueToku: { name: 'かく乱', desc: '【死角からの心理戦】審判や相手内野手の死角を突く巧みなリードとフェイントで守備陣を翻弄する。' } }
+                ]
+            },
+            {
+                id: 'q45', primaryElem: 'lead', depth: 2, category: '主従・忠誠のスタイル',
+                question: '絶対的な「主従関係・忠誠」を結ぶなら、どちらのパートナーがいい？',
+                choices: [
+                    { title: '感情を抑えたクールな「忠犬ボディガード・暗殺者メイド」', shortTag: 'クール忠犬メイド派', emoji: '🗡️', catchCopy: '命を懸けて主に捧げる刃', desc: '普段は無口で任務に忠実なプロフェッショナルなのに、主であるあなたに褒められた時だけ微かに頬を緩める忠誠心。', stats: { meet: 7, power: 6, speed: 9, arm: 9, field: 9, catch: 6, velo: 3, ctrl: 8, stam: 7 }, posPts: { center: 5, short: 4, reliever: 4 }, pitchType: { dir: 'left', name: 'カットボール', add: 2 }, elem: { visual: 1, gap: 3, lead: 3, care: 2, thrill: 1, pure: 1 }, blueToku: { name: '守備職人', desc: '【主を守る絶対防衛圏】どんな鋭いライナーも身を挺してダイビングキャッチする忠義の守備。' } },
+                    { title: '褒められたくて尻尾を振って駆け寄ってくる「大型犬系・後輩ヒロイン」', shortTag: '大型犬系・忠実後輩派', emoji: '🐶', catchCopy: '全力の愛情表現と頭なで待ち', desc: '「先輩っ！見てましたか！？」と目を輝かせて飛びついてきて、頭を撫でてあげるまでその場を離れない純粋無垢な懐き方。', stats: { meet: 6, power: 7, speed: 8, arm: 7, field: 6, catch: 6, velo: 2, ctrl: 5, stam: 9 }, posPts: { left: 4, third: 4, starter: 4 }, pitchType: { dir: 'down', name: '縦フォーク', add: 2 }, elem: { visual: 1, gap: 0, lead: 2, care: 3, thrill: 0, pure: 4 }, blueToku: { name: 'ムード○', desc: '【全力疾走の後輩オーラ】ベンチからグラウンドまで常に全力疾走し、チーム全体を明るく盛り上げる。' } }
+                ]
+            },
+            {
+                id: 'q46', primaryElem: 'visual', depth: 3, category: '肌の質感・マーク・刻印フェチ',
+                question: '白い肌の上にある「特別なアクセント（印）」としてフェチを感じるのは？',
+                choices: [
+                    { title: '口元や胸元・内ももにある「艶やかな泣きぼくろ・艶ぼくろ」', shortTag: '艶ぼくろフェチ派', emoji: '⚫', catchCopy: '視線を誘う一粒の引力', desc: '目元や唇の下、あるいは服を脱いだ時だけ見える内ももにポツンと存在するホクロ。そこだけ指でなぞりたくなる魔力。', stats: { meet: 8, power: 4, speed: 5, arm: 5, field: 7, catch: 7, velo: 1, ctrl: 9, stam: 5 }, posPts: { second: 4, right: 3, reliever: 4 }, pitchType: { dir: 'downright', name: 'チェンジアップ', add: 2 }, elem: { visual: 4, gap: 0, lead: 1, care: 1, thrill: 2, pure: 1 }, pitchBlueToku: { name: '低め○', desc: '【ホクロを射抜く精密制球】ストライクゾーンの角にある小さな一点（ホクロ）へ寸分の狂いなく投げ込む。' } },
+                    { title: '首筋や鎖骨に残る「キスマーク・噛み跡・契約の紋章」', shortTag: 'キスマーク・刻印派', emoji: '💋', catchCopy: '自分のものだと示す独占の証', desc: '襟元や絆創膏の下に隠された赤いキスマークや噛み跡。「これは誰にも見せちゃダメだよ」というマーキングの悦び。', stats: { meet: 5, power: 9, speed: 6, arm: 8, field: 4, catch: 4, velo: 3, ctrl: 4, stam: 7 }, posPts: { closer: 4, third: 4, left: 4 }, pitchType: { dir: 'down', name: 'スプリット', add: 3 }, elem: { visual: 3, gap: 0, lead: 4, care: 0, thrill: 5, pure: 0 }, blueToku: { name: '威圧感', desc: '【マーキングの覇気】相手投手に消えないトラウマ（刻印）を刻み込む強烈なスイング。' } }
+                ]
+            },
+            {
+                id: 'q47', primaryElem: 'gap', depth: 2, category: '知性・クール属性の崩壊',
+                question: '普段は完璧で知的な「生徒会長・委員長タイプ」の弱点として好きなのは？',
+                choices: [
+                    { title: '実は重度の「むっつりスケベ・BLや恋愛小説にドハマり中」', shortTag: '委員長むっつり創作派', emoji: '📚', catchCopy: '図書室の奥の秘密の読書ノート', desc: '風紀を取り締まる立場なのに、カバンの中には過激な恋愛小説がぎっしり。その秘密を握られてタジタジになる姿。', stats: { meet: 8, power: 6, speed: 5, arm: 5, field: 7, catch: 7, velo: 1, ctrl: 8, stam: 5 }, posPts: { catcher: 4, second: 4, left: 3 }, pitchType: { dir: 'downleft', name: 'スラーブ', add: 2 }, elem: { visual: 0, gap: 5, lead: 1, care: 0, thrill: 3, pure: 1 }, blueToku: { name: 'データ重視（ささやき）', desc: '【脳内シミュレーションの鬼】膨大な知識と妄想力を駆使し、相手の配球パターンを完全に読み切る。' } },
+                    { title: 'お化けや雷・暗い場所が「ダメダメで涙目で抱きついてくる」', shortTag: 'クール系怖がりギャップ派', emoji: '🌩️', catchCopy: '停電の夜に崩れる威厳', desc: '普段は凛として誰にも頼らないのに、雷が鳴った瞬間に「ひゃあっ！」と飛びついてきて震えている王道ギャップ。', stats: { meet: 7, power: 5, speed: 7, arm: 5, field: 7, catch: 6, velo: 2, ctrl: 7, stam: 6 }, posPts: { short: 4, center: 4, starter: 3 }, pitchType: { dir: 'down', name: 'カーブ', add: 2 }, elem: { visual: 0, gap: 4, lead: 2, care: 1, thrill: 0, pure: 3 }, blueToku: { name: 'チャンス○', desc: '【雷鳴とともに覚醒】ピンチや緊迫した場面で守ってあげたい本能が働き、打撃力がアップする。' } }
+                ]
+            },
+            {
+                id: 'q48', primaryElem: 'care', depth: 3, category: '癒やし・奉仕の極致',
+                question: '一日の終わりに受けたい「究極のリラクゼーション奉仕」はどっち？',
+                choices: [
+                    { title: '浴衣や着物姿のお姉さんによる「膝枕＆梵天での耳かき」', shortTag: '膝枕・耳かき奉仕派', emoji: '🎋', catchCopy: '柔らかな太ももと至福の微睡み', desc: '柔らかい太ももの感触と、上から見下ろす優しい微笑み。カリカリと心地よい耳かきの音に包まれてそのまま眠りにつく贅沢。', stats: { meet: 7, power: 4, speed: 4, arm: 4, field: 8, catch: 10, velo: 1, ctrl: 9, stam: 7 }, posPts: { catcher: 5, first: 3, reliever: 4 }, pitchType: { dir: 'down', name: 'スローカーブ', add: 2 }, elem: { visual: 1, gap: 0, lead: 0, care: 5, thrill: 0, pure: 3 }, blueToku: { name: 'キャッチャー○', desc: '【極上の膝枕キャッチング】どんなに荒れた球も、綿毛の梵天のように柔らかくミットで包み込む。' } },
+                    { title: '一緒のお風呂で「背中を流し合い・シャンプーしてもらう密着入浴」', shortTag: '密着お風呂奉仕派', emoji: '🧼', catchCopy: '泡まみれの肌と湯気のむこう側', desc: '湯けむりの中、後ろから抱きつくようにして泡で背中を洗われたり、頭を撫でるようにシャンプーしてもらう濃密なバスタイム。', stats: { meet: 6, power: 6, speed: 5, arm: 5, field: 6, catch: 8, velo: 2, ctrl: 7, stam: 8 }, posPts: { starter: 4, left: 4, catcher: 3 }, pitchType: { dir: 'downright', name: 'サークルチェンジ', add: 2 }, elem: { visual: 2, gap: 0, lead: 0, care: 4, thrill: 2, pure: 2 }, pitchBlueToku: { name: '回復◎', desc: '【極楽バスタイム】登板後の密着入浴ケアにより、中4日でも疲れを残さずマウンドへ上がる。' } }
+                ]
+            },
+            {
+                id: 'q49', primaryElem: 'thrill', depth: 3, category: '歪んだ愛情・ヤンデレの方向性',
+                question: 'もし「重すぎる愛（ヤンデレ）」を向けられるなら、どちらのタイプがいい？',
+                choices: [
+                    { title: 'あなたを守るためなら何でも排除する「過保護・献身型ヤンデレ」', shortTag: '過保護・献身ヤンデレ派', emoji: '🔪', catchCopy: 'あなたに害なすものは全て消す', desc: 'あなた自身にはどこまでも優しく従順なのに、あなたを傷つける外敵に対しては一切の容赦がない狂気的な献身。', stats: { meet: 6, power: 8, speed: 6, arm: 8, field: 7, catch: 7, velo: 3, ctrl: 6, stam: 8 }, posPts: { catcher: 4, third: 4, closer: 4 }, pitchType: { dir: 'left', name: 'カミソリスライダー', add: 3 }, elem: { visual: 0, gap: 2, lead: 0, care: 4, thrill: 5, pure: 0 }, blueToku: { name: 'ゲッツー崩し', desc: '【愛するチームのためなら】味方のチャンスを潰そうとする併殺プレーには、狂気的な気迫で食い下がる。' } },
+                    { title: '二人きりの部屋に閉じ込めて永遠に愛でる「監禁・独占型ヤンデレ」', shortTag: '監禁・独占ヤンデレ派', emoji: '🔒', catchCopy: '鍵のかかった部屋で永遠の愛を', desc: '「もうどこにも行かせないよ♡」と外の世界から隔離され、衣食住のすべてを管理されながら愛され続ける極限の独占。', stats: { meet: 3, power: 10, speed: 2, arm: 8, field: 3, catch: 5, velo: 3, ctrl: 3, stam: 10 }, posPts: { first: 5, starter: 4, left: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 3 }, elem: { visual: 0, gap: 1, lead: 3, care: 2, thrill: 6, pure: 0 }, pitchBlueToku: { name: '完投タイプ', desc: '【マウンドからの監禁】一度マウンドに上がったら9回裏が終わるまで誰にもマウンドを譲らない独占欲。' } }
+                ]
+            },
+            {
+                id: 'q50', primaryElem: 'pure', depth: 2, category: '幼少期からの絆・時間軸ロマン',
+                question: '二人の間に流れる「時間の積み重ね（歴史）」として胸が熱くなるのは？',
+                choices: [
+                    { title: '子供の頃の「お嫁さんになる約束」をずっと信じて待っていた一途さ', shortTag: '幼き日の約束・純愛派', emoji: '💍', catchCopy: '色褪せないクローバーの指輪', desc: '10年ぶりに再会した初恋の子が、昔あげたおもちゃの指輪を今でも大切に宝物にしていて、一途に想い続けてくれていた奇跡。', stats: { meet: 8, power: 5, speed: 6, arm: 6, field: 8, catch: 8, velo: 2, ctrl: 9, stam: 8 }, posPts: { starter: 4, short: 4, catcher: 3 }, pitchType: { dir: 'down', name: 'スローカーブ', add: 2 }, elem: { visual: 0, gap: 0, lead: 0, care: 2, thrill: 0, pure: 6 }, blueToku: { name: 'フランチャイズプレイヤー', desc: '【10年越しの純愛貫徹】どんな大型契約を提示されても、最初に愛した球団を生涯裏切らない一途さ。' } },
+                    { title: '最初は最悪の出会い（敵同士）だった二人が「唯一無二の相棒・恋人」になる', shortTag: '宿敵から恋人へ派', emoji: '⚔️', catchCopy: '刃を交えたからこそ分かる本音', desc: '最初は互いに反発し合いライバルとして競い合っていた二人が、背中を預け合ううちに誰よりも深い絆と愛で結ばれる王道熱血展開。', stats: { meet: 6, power: 8, speed: 8, arm: 8, field: 6, catch: 4, velo: 3, ctrl: 6, stam: 8 }, posPts: { center: 4, right: 4, closer: 4 }, pitchType: { dir: 'left', name: 'Hスライダー', add: 2 }, elem: { visual: 0, gap: 3, lead: 2, care: 0, thrill: 1, pure: 4 }, blueToku: { name: '対エース○', desc: '【宿敵との真っ向勝負】ライバル球団のエースと対峙した時、最高の笑みを浮かべて豪快に弾き返す。' } }
+                ]
+            },
+
+            // ---------------- [Q51 - Q60: さらにディープなフェチ・アブノーマル・究極選択] ----------------
+            {
+                id: 'q51', primaryElem: 'visual', depth: 3, category: '眼鏡・アイウェアの細部フェチ',
+                question: 'メガネっ娘フェチの中でも、さらに踏み込んだ「フレームの好み」は？',
+                choices: [
+                    { title: '知的でクールな「アンダーリム・銀縁フレーム」をクイッと上げる仕草', shortTag: 'アンダーリム・知性派', emoji: '📐', catchCopy: '冷徹なレンズの奥の計算', desc: '下半分だけにフレームがあるアンダーリム眼鏡。中指でブリッジをクイッと押し上げながら冷静に分析してくる知的な色気。', stats: { meet: 8, power: 3, speed: 5, arm: 5, field: 9, catch: 8, velo: 1, ctrl: 10, stam: 5 }, posPts: { second: 5, catcher: 4, reliever: 4 }, pitchType: { dir: 'left', name: 'カットボール', add: 2 }, elem: { visual: 3, gap: 2, lead: 2, care: 0, thrill: 1, pure: 1 }, blueToku: { name: '選球眼', desc: '【アンダーリムの精密測定】ミリ単位でストライクゾーンの境界線を測定し、審判以上に正確に判定する。' } },
+                    { title: '少し大きめの「黒縁・丸メガネ」がずり落ちて上目遣いになる瞬間', shortTag: 'ずり落ち丸メガネ派', emoji: '👓', catchCopy: 'レンズ越しではない生の視線', desc: '少しサイズの大きいメガネが鼻先までずり落ち、フレームの上から潤んだ瞳でじっとこちらを見上げてくる無防備な可愛さ。', stats: { meet: 7, power: 4, speed: 6, arm: 4, field: 7, catch: 8, velo: 1, ctrl: 8, stam: 6 }, posPts: { left: 4, second: 4, first: 3 }, pitchType: { dir: 'downright', name: 'チェンジアップ', add: 2 }, elem: { visual: 3, gap: 3, lead: 0, care: 2, thrill: 0, pure: 2 }, blueToku: { name: '流し打ち', desc: '【フレーム越しの絶妙な角度】ずり落ちたメガネの隙間を通すかのように、逆方向へ巧みに打球を落とす。' } }
+                ]
+            },
+            {
+                id: 'q52', primaryElem: 'lead', depth: 3, category: 'ペット化・首輪・調教ロマン',
+                question: '秘密の部屋での「主従・ペットプレイ的フェティシズム」として惹かれるのは？',
+                choices: [
+                    { title: 'チョーカーや首輪をつけて「自分だけの可愛いペットとして愛でる」', shortTag: '首輪・ペット愛玩派', emoji: '⛓️', catchCopy: '鈴の音が響く二人だけの契約', desc: '普段はプライドの高い子に可愛いチョーカー（首輪）を贈り、「よしよし、いい子だね」と頭を撫でて従わせる背徳の支配感。', stats: { meet: 5, power: 9, speed: 6, arm: 8, field: 5, catch: 4, velo: 3, ctrl: 5, stam: 7 }, posPts: { third: 5, closer: 4, first: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 3 }, elem: { visual: 2, gap: 2, lead: 5, care: 1, thrill: 4, pure: 0 }, blueToku: { name: 'プルヒッター', desc: '【リードを手繰り寄せる強打】相手投手の球を自分の手元へ強引に引き寄せ、レフトスタンドへ叩き込む。' } },
+                    { title: 'ご褒美のお預けを食らいながら「飼い主お姉さんにしつけられたい」', shortTag: 'お預け・しつけられ派', emoji: '🦴', catchCopy: '「待て」の後の甘美なるご褒美', desc: '「まだダメよ、ちゃんと我慢できたらご褒美あげるからね」と焦らされ、従順に待ったあとに頭を撫でてもらう快感。', stats: { meet: 8, power: 4, speed: 6, arm: 4, field: 8, catch: 8, velo: 1, ctrl: 8, stam: 6 }, posPts: { catcher: 5, second: 4, reliever: 3 }, pitchType: { dir: 'downleft', name: 'スローカーブ', add: 2 }, elem: { visual: 0, gap: 1, lead: 0, care: 3, thrill: 4, pure: 0 }, blueToku: { name: '待球打法（粘り打ち）', desc: '【究極の「待て」の精神】甘いご褒美ボールが来るまで、何球でもじっくりとファウルで待ち続ける。' } }
+                ]
+            },
+            {
+                id: 'q53', primaryElem: 'thrill', depth: 3, category: '匂い・湿度・フェロモンフェチ',
+                question: '綺麗なお花の香りではなく、より「生々しい体温とフェロモンの匂い」ならどっち？',
+                choices: [
+                    { title: '1日履いた後の「ブーツやストッキング・ローファーの蒸れた匂い」', shortTag: 'ストッキング湿度派', emoji: '👢', catchCopy: '密閉された1日のリアルな湿度', desc: '夕方、仕事や学校帰りに靴を脱いだ瞬間に漂う、リアルな生活感とフェロモンが凝縮された背徳の香り。', stats: { meet: 6, power: 6, speed: 7, arm: 5, field: 7, catch: 7, velo: 2, ctrl: 7, stam: 7 }, posPts: { reliever: 5, third: 3, left: 3 }, pitchType: { dir: 'downright', name: 'シンカー', add: 3 }, elem: { visual: 2, gap: 1, lead: 0, care: 1, thrill: 6, pure: 0 }, pitchBlueToku: { name: '重い球', desc: '【高湿度の球質】まとわりつくような湿度と重みのあるボールで、打球を内野ゴロに封じ込める。' } },
+                    { title: 'うなじや耳の裏・鎖骨から香る「その子固有の甘い体臭・フェロモン」', shortTag: '耳裏・固有フェロモン派', emoji: '👃', catchCopy: 'ゼロ距離の者だけが知る蜜の香', desc: '香水ではなく、抱きしめて耳の裏や首筋に鼻を埋めた時だけに感じられる、頭がクラクラするような甘く温かい匂い。', stats: { meet: 7, power: 6, speed: 6, arm: 6, field: 6, catch: 8, velo: 2, ctrl: 8, stam: 6 }, posPts: { catcher: 4, center: 3, starter: 4 }, pitchType: { dir: 'down', name: 'フォーク', add: 2 }, elem: { visual: 0, gap: 1, lead: 1, care: 3, thrill: 4, pure: 2 }, blueToku: { name: '固め打ち', desc: '【フェロモン中毒】一度ヒットの匂いを嗅ぎつけると、本能のままに次々と安打を重ねる。' } }
+                ]
+            },
+            {
+                id: 'q54', primaryElem: 'gap', depth: 3, category: '年齢・見た目と中身のギャップ',
+                question: '「見た目の年齢感と中身のギャップ」としてロマンを感じるのは？',
+                choices: [
+                    { title: '見た目は小柄で幼いのに、中身は「達観した数百歳のロリババア・師匠」', shortTag: 'ロリババア・古風師匠派', emoji: '🍵', catchCopy: '小さな身体に宿る千年の余裕', desc: '「〜じゃ」「うむ、苦しゅうないぞ」と古風な口調で全てを達観しているのに、身長が低くて高いところの物が取れない可愛さ。', stats: { meet: 9, power: 4, speed: 7, arm: 5, field: 9, catch: 8, velo: 1, ctrl: 10, stam: 4 }, posPts: { second: 5, short: 4, reliever: 4 }, pitchType: { dir: 'down', name: '超スローボール', add: 3 }, elem: { visual: 2, gap: 5, lead: 1, care: 3, thrill: 0, pure: 0 }, blueToku: { name: 'いぶし銀', desc: '【千年の打撃仙人】小さな体躯ながら達人のような老獪なバット捌きで、相手守備陣の隙を突く。' } },
+                    { title: '見た目は妖艶な大人の美女なのに、恋愛経験ゼロの「超初心（ウブ）お姉さん」', shortTag: '妖艶ウブお姉さん派', emoji: '🌹', catchCopy: '抜群のスタイルと中学生並みの純情', desc: '誰もが振り返るセクシーなプロポーションなのに、手をつないだだけで「ひゃぅっ！？」とパニックになって茹でダコになる純情さ。', stats: { meet: 6, power: 9, speed: 5, arm: 7, field: 5, catch: 5, velo: 3, ctrl: 5, stam: 7 }, posPts: { first: 4, right: 4, starter: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 3, gap: 5, lead: 1, care: 1, thrill: 0, pure: 3 }, blueToku: { name: '初球○', desc: '【ウブなファーストコンタクト】最初の1球目に対する反応が異常に純粋かつ強烈で、いきなり長打を放つ。' } }
+                ]
+            },
+            {
+                id: 'q55', primaryElem: 'visual', depth: 2, category: '背面・バックシャンフェチ',
+                question: '後ろ姿（バックビュー）に視線が釘付けになる瞬間ならどっち？',
+                choices: [
+                    { title: 'ドレスやホルターネックで露わになった「美しい背中のラインと肩甲骨」', shortTag: '背中・肩甲骨ライン派', emoji: '🦋', catchCopy: '天使の羽が宿る背面の芸術', desc: '普段は隠れている背中が大胆に開いた衣装。背骨のくぼみと、腕を動かすたびに浮き出る肩甲骨のラインに気品と色気を感じる。', stats: { meet: 7, power: 5, speed: 7, arm: 8, field: 8, catch: 5, velo: 2, ctrl: 8, stam: 6 }, posPts: { center: 4, short: 4, right: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 4, gap: 1, lead: 0, care: 0, thrill: 1, pure: 2 }, pitchBlueToku: { name: '球持ち○', desc: '【柔軟な肩甲骨の可動域】天使の羽のように柔らかい肩甲骨から、しなやかな腕の振りで球を放つ。' } },
+                    { title: '屈んだ瞬間やタイトなパンツから伝わる「ヒップライン・桃尻の丸み」', shortTag: 'ヒップライン・桃尻派', emoji: '🍑', catchCopy: '重力に抗う究極の曲線美', desc: '下の物を拾おうと前屈みになった瞬間や、デニム・スカート越しに主張する豊かなヒップラインの張りと弾力。', stats: { meet: 5, power: 9, speed: 6, arm: 7, field: 5, catch: 6, velo: 3, ctrl: 5, stam: 9 }, posPts: { third: 5, first: 4, starter: 4 }, pitchType: { dir: 'down', name: '重いフォーク', add: 2 }, elem: { visual: 5, gap: 0, lead: 1, care: 1, thrill: 2, pure: 0 }, blueToku: { name: 'パワーヒッター', desc: '【球界屈指のヒップパワー】強靭で豊かな臀部の筋肉から生み出されるスイングスピードで本塁打を量産する。' } }
+                ]
+            },
+            {
+                id: 'q56', primaryElem: 'care', depth: 2, category: '手料理・胃袋掴まれフェチ',
+                question: 'ヒロインが「自分のために作ってくれる手料理」のシチュエーションなら？',
+                choices: [
+                    { title: 'エプロン姿で「美味しい？」と覗き込んでくる完璧な家庭料理・愛妻弁当', shortTag: '愛妻弁当・エプロン派', emoji: '🍱', catchCopy: '胃袋から心まで満たす温もり', desc: '新妻のようにフリルのエプロンを着て、一口食べるごとに「どうかな…？」と期待に満ちた瞳で覗き込んでくる幸福な食卓。', stats: { meet: 7, power: 5, speed: 5, arm: 5, field: 8, catch: 9, velo: 1, ctrl: 8, stam: 9 }, posPts: { catcher: 5, first: 4, starter: 4 }, pitchType: { dir: 'downright', name: 'チェンジアップ', add: 2 }, elem: { visual: 1, gap: 0, lead: 0, care: 5, thrill: 0, pure: 4 }, blueToku: { name: '回復○', desc: '【愛妻弁当のスタミナ補給】栄養満点の手料理で胃袋を掴まれ、シーズン後半でもバテない体力を維持する。' } },
+                    { title: '絆創膏だらけの指で作ってくれた「ちょっと不格好な手作りチョコ・料理」', shortTag: '絆創膏の奮闘手料理派', emoji: '🩹', catchCopy: '不器用な指先に詰まった真心', desc: '料理が苦手なのに、指にいくつも絆創膏を貼りながら何時間もかけて作ってくれた、少し焦げたハンバーグやチョコの尊さ。', stats: { meet: 6, power: 7, speed: 6, arm: 6, field: 6, catch: 6, velo: 2, ctrl: 6, stam: 7 }, posPts: { third: 4, left: 4, second: 3 }, pitchType: { dir: 'right', name: 'シュート', add: 2 }, elem: { visual: 0, gap: 4, lead: 0, care: 3, thrill: 0, pure: 4 }, blueToku: { name: '意外性', desc: '【不格好でも心は特大ホームラン】綺麗なお手本スイングではなくとも、気持ちでスタンドまで運んでしまう。' } }
+                ]
+            },
+            {
+                id: 'q57', primaryElem: 'lead', depth: 2, category: 'いたずら・焦らしの駆け引き',
+                question: 'スキンシップにおける「焦らし・いたずら」の駆け引きならどっち？',
+                choices: [
+                    { title: 'キスしそうな距離で寸止めして「お預け」を食らわせる焦らし攻め', shortTag: '寸止め・焦らし攻め派', emoji: '🤏', catchCopy: 'あと1ミリが遠い甘美な拷問', desc: '相手が目を閉じて待っているのに、あえておでこや頬にチュッとして焦らし、「そっちじゃないでしょ…！」と赤面させる悦び。', stats: { meet: 7, power: 6, speed: 7, arm: 7, field: 7, catch: 5, velo: 2, ctrl: 9, stam: 6 }, posPts: { reliever: 5, closer: 4, short: 3 }, pitchType: { dir: 'down', name: 'スプリット', add: 3 }, elem: { visual: 0, gap: 2, lead: 5, care: 0, thrill: 3, pure: 0 }, pitchBlueToku: { name: '緩急○', desc: '【寸止めの魔術師】直球と思わせて手元でフッと減速するチェンジアップで、打者を焦らし抜く。' } },
+                    { title: 'くすぐりや耳フーで「もうやめてぇっ♡」と涙目で笑わせるいたずら', shortTag: 'くすぐり・耳フー攻め派', emoji: '🪶', catchCopy: '防ぎようのない無邪気な屈服', desc: '脇腹や耳元などの弱点を徹底的にくすぐり、クールな子も強気な子も涙目で笑い転げて降参させるスキンシップ。', stats: { meet: 8, power: 5, speed: 8, arm: 6, field: 7, catch: 4, velo: 2, ctrl: 7, stam: 6 }, posPts: { second: 4, center: 4, right: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 1, gap: 2, lead: 4, care: 1, thrill: 2, pure: 1 }, blueToku: { name: 'かく乱', desc: '【弱点くすぐり攻撃】相手投手の嫌がるセーフティバントや揺さぶりで、リズムを完全に崩す。' } }
+                ]
+            },
+            {
+                id: 'q58', primaryElem: 'pure', depth: 1, category: '季節・イベントのロマン',
+                question: '恋人と過ごす「季節のイベントシチュエーション」で一番グッとくるのは？',
+                choices: [
+                    { title: '冬の寒い帰り道、「1つのマフラーに二人でぐるぐる巻き」になる距離感', shortTag: '相合いマフラー・冬派', emoji: '🧣', catchCopy: '白い吐息と分け合う体温', desc: '「寒いから半分貸してあげる」と1本のマフラーを二人で巻き、頬が触れ合うほどの近さで白い息を吐きながら歩く帰り道。', stats: { meet: 8, power: 4, speed: 5, arm: 5, field: 8, catch: 8, velo: 1, ctrl: 9, stam: 7 }, posPts: { second: 4, catcher: 4, starter: 3 }, pitchType: { dir: 'downleft', name: 'スローカーブ', add: 2 }, elem: { visual: 1, gap: 0, lead: 0, care: 3, thrill: 0, pure: 5 }, blueToku: { name: 'チームプレイ○', desc: '【二人の相合いマフラー】二遊間のコンビネーションやバッテリーの呼吸がピタリと一致する。' } },
+                    { title: '夏の海辺やプールで、夕陽を見ながら「水着の上にパーカーを羽織る」姿', shortTag: '夕暮れ海辺・水着パーカー派', emoji: '🏖️', catchCopy: '祭りのあとの切なさと色気', desc: 'はしゃいだ後の夕暮れのビーチ。少し肌寒くなって水着の上にパーカーを羽織り、濡れた髪でこちらに寄り添ってくるエモさ。', stats: { meet: 6, power: 7, speed: 8, arm: 7, field: 6, catch: 5, velo: 2, ctrl: 6, stam: 7 }, posPts: { center: 4, right: 4, left: 3 }, pitchType: { dir: 'left', name: 'スライダー', add: 2 }, elem: { visual: 3, gap: 1, lead: 0, care: 1, thrill: 1, pure: 4 }, blueToku: { name: 'サヨナラ男', desc: '【サンセットビーチの輝き】試合終盤の夕暮れ時に最も美しい打球を放つロマンチスト。' } }
+                ]
+            },
+            {
+                id: 'q59', primaryElem: 'thrill', depth: 3, category: '倒錯・フェティシズムの極北',
+                question: '誰にも言えない「ちょっと倒錯的なフェチ」として共感できるのはどっち？',
+                choices: [
+                    { title: '清楚な子が「少し下品な音や表情」を出してしまって羞恥に震える瞬間', shortTag: '羞恥・清楚崩壊フェチ派', emoji: '🫣', catchCopy: '上品な仮面が剥がれ落ちる瞬間', desc: '普段はお嬢様や優等生として振る舞っている子が、我慢できずに乱れた声や表情を漏らしてしまい、手で顔を覆って恥じらう姿。', stats: { meet: 6, power: 8, speed: 5, arm: 6, field: 5, catch: 5, velo: 2, ctrl: 7, stam: 6 }, posPts: { third: 4, reliever: 4, left: 3 }, pitchType: { dir: 'down', name: 'フォーク', add: 3 }, elem: { visual: 1, gap: 4, lead: 3, care: 0, thrill: 5, pure: 0 }, blueToku: { name: '詰まり○（意外性）', desc: '【清楚崩壊のポテンヒット】どん詰まりの不格好な当たりに見えても、絶妙なコースに落ちてタイムリーになる。' } },
+                    { title: '無表情・クールな子に「冷めた目で淡々と奉仕・処理される」温度差', shortTag: '無感情・クール奉仕派', emoji: '🧊', catchCopy: '業務的で無機質な快楽の沼', desc: '愛想笑いひとつせず、スマホを見たり読書をしながら「はい、これでいいんでしょ」と淡々と相手をしてくれる独特の背徳感。', stats: { meet: 7, power: 5, speed: 6, arm: 7, field: 8, catch: 7, velo: 2, ctrl: 9, stam: 6 }, posPts: { reliever: 5, closer: 4, second: 4 }, pitchType: { dir: 'left', name: '無表情カットボール', add: 3 }, elem: { visual: 1, gap: 2, lead: 0, care: 2, thrill: 5, pure: 0 }, pitchBlueToku: { name: 'ポーカーフェイス', desc: '【業務的シャットアウト】三振を奪ってもピンチを迎えても、心拍数ひとつ変えずに淡々とアウトを処理する。' } }
+                ]
+            },
+            {
+                id: 'q60', primaryElem: 'lead', depth: 3, category: '終局・二人の未来と誓い',
+                question: 'すべての性癖と愛を受け止め合った二人が行き着く「理想の未来」は？',
+                choices: [
+                    { title: '何年経っても新婚のように甘々でイチャつき続ける「永遠のラブラブ夫婦」', shortTag: '永遠の新婚ラブラブ派', emoji: '💒', catchCopy: '毎日がハネムーンの幸福空間', desc: '朝はいってらっしゃいのキス、夜は一緒のお風呂と膝枕。周囲が呆れるほどいつまでもお互いしか見えていない純愛の終着点。', stats: { meet: 8, power: 6, speed: 6, arm: 6, field: 8, catch: 9, velo: 2, ctrl: 8, stam: 8 }, posPts: { catcher: 4, starter: 4, second: 3, first: 3 }, pitchType: { dir: 'downright', name: 'サークルチェンジ', add: 2 }, elem: { visual: 0, gap: 0, lead: 1, care: 4, thrill: 0, pure: 5 }, blueToku: { name: 'お祭り男（幸福）', desc: '【永遠のハネムーン打法】幸せオーラ全開で打席に立ち、ファンを笑顔にする快打を連発する。' } },
+                    { title: '表向きは理想のカップル、裏では毎晩ディープな性癖を開拓し合う「共犯パートナー」', shortTag: '生涯性癖開拓・共犯派', emoji: '🗝️', catchCopy: '死ぬまで飽きない深淵の探求者', desc: '昼間は品行方正な社会人カップルとして過ごしながら、寝室の鍵を閉めた瞬間、生涯かけて新しいフェチと快楽を探求し続ける二人。', stats: { meet: 6, power: 9, speed: 7, arm: 8, field: 5, catch: 4, velo: 3, ctrl: 6, stam: 7 }, posPts: { closer: 4, third: 4, right: 4, reliever: 3 }, pitchType: { dir: 'down', name: 'SFF', add: 3 }, elem: { visual: 2, gap: 2, lead: 3, care: 0, thrill: 5, pure: 0 }, blueToku: { name: '広角打法', desc: '【全方向への性癖開拓】定石にとらわれず、グラウンドのあらゆる角度へ鋭い打球を打ち分ける探求者。' } }
+                ]
+            }
+        ];
+
+        // ランダム選手名候補
+        const RANDOM_NAMES = [
+            'パワプロ', '矢部くん', '猪狩守', '早川あおい', '橘みずき', '六道聖',
+            '友沢亮', '東條小次郎', '猛田慶次', '神童裕二郎', '紳士ニキ', '性癖太郎'
+        ];
+
+        // 具体的な11守備位置マスター定義（先発・中継ぎ・抑え / 捕・一・二・三・遊 / 左翼・中堅・右翼）
+        const POSITION_META = {
+            starter:  { label: '先発投手',       short: '先発', isPitcher: true,  colorCls: 'bg-red-600 text-white border-red-200',          roleDesc: 'ゲームを作る先発の柱' },
+            reliever: { label: '中継ぎ投手',     short: '中継', isPitcher: true,  colorCls: 'bg-rose-500 text-white border-rose-200',        roleDesc: '窮地を救うセットアッパー' },
+            closer:   { label: '抑え投手',       short: '抑え', isPitcher: true,  colorCls: 'bg-purple-600 text-white border-purple-200',    roleDesc: '最終回に君臨する絶対守護神' },
+            catcher:  { label: '捕手',           short: '捕',   isPitcher: false, colorCls: 'bg-sky-400 text-slate-950 border-sky-200',      roleDesc: '包容力で束ねる扇の要' },
+            first:    { label: '一塁手',         short: '一',   isPitcher: false, colorCls: 'bg-yellow-400 text-slate-950 border-yellow-200', roleDesc: '一撃必殺のロマン砲スラッガー' },
+            second:   { label: '二塁手',         short: '二',   isPitcher: false, colorCls: 'bg-yellow-400 text-slate-950 border-yellow-200', roleDesc: '華麗なる技巧派セカンド' },
+            third:    { label: '三塁手',         short: '三',   isPitcher: false, colorCls: 'bg-yellow-400 text-slate-950 border-yellow-200', roleDesc: '強打と強肩のホットコーナー' },
+            short:    { label: '遊撃手',         short: '遊',   isPitcher: false, colorCls: 'bg-yellow-400 text-slate-950 border-yellow-200', roleDesc: 'ダイヤモンドを統べる守備の華' },
+            left:     { label: '左翼手（レフト）',   short: '左',   isPitcher: false, colorCls: 'bg-green-500 text-slate-950 border-green-200',   roleDesc: '打線を牽引する外野の大砲' },
+            center:   { label: '中堅手（センター）', short: '中',   isPitcher: false, colorCls: 'bg-emerald-400 text-slate-950 border-emerald-200', roleDesc: '広大な守備範囲のスピードスター' },
+            right:    { label: '右翼手（ライト）',   short: '右',   isPitcher: false, colorCls: 'bg-green-500 text-slate-950 border-green-200',   roleDesc: 'レーザービームを誇る強肩強打者' }
+        };
+
+        // 性癖6大エレメント定義
+        const ELEMENT_META = {
+            visual: { label: '視覚・造形美',   icon: '👁️', color: 'from-pink-400 to-rose-500' },
+            gap:    { label: '情緒・ギャップ', icon: '⚡', color: 'from-amber-300 to-orange-500' },
+            lead:   { label: '主導・征服感',   icon: '👑', color: 'from-red-400 to-red-600' },
+            care:   { label: '献身・包容力',   icon: '☕', color: 'from-emerald-300 to-teal-500' },
+            thrill: { label: '背徳・スリル',   icon: '🔥', color: 'from-purple-400 to-fuchsia-600' },
+            pure:   { label: '純愛・王道感',   icon: '🫧', color: 'from-sky-300 to-blue-500' }
+        };
+
+        // =========================================================================
+        // 2. アプリケーション状態管理（動的アダプティブ20問選出対応）
+        // =========================================================================
+        const TOTAL_QUESTIONS_TO_ASK = 20;
+
+        let appState = {
+            playerName: 'パワプロ',
+            selectedHand: '右投右打', // 登録画面で選択された投打（能力や守備位置には一切影響しない）
+            selectedQuestions: [],    // 動的に選ばれた設問オブジェクトの配列（最大20問）
+            usedQuestionIds: new Set(),
+            currentStep: 0,
+            answers: [],              // 選択したインデックス(0 or 1)の配列
+            runningElem: { visual: 0, gap: 0, lead: 0, care: 0, thrill: 0, pure: 0 },
+            adaptiveReasonLog: [],    // 各問がなぜ選出されたかのステータスラベル
+            generatedPlayer: null
+        };
+
+        // =========================================================================
+        // 3. タイトル・設定画面の操作関数
+        // =========================================================================
+        function setRandomName() {
+            const input = document.getElementById('inputName');
+            const current = input.value;
+            let candidates = RANDOM_NAMES.filter(n => n !== current);
+            input.value = candidates[Math.floor(Math.random() * candidates.length)];
+        }
+
+        function selectHand(handStr) {
+            appState.selectedHand = handStr;
+            const buttons = document.querySelectorAll('.hand-btn');
+            buttons.forEach(btn => {
+                if (btn.getAttribute('data-hand') === handStr) {
+                    btn.className = 'hand-btn py-2 px-1 rounded-lg font-black text-xs border-2 border-yellow-400 bg-blue-600 text-white shadow transition';
+                } else {
+                    btn.className = 'hand-btn py-2 px-1 rounded-lg font-bold text-xs border-2 border-blue-500/50 bg-slate-900/80 text-blue-200 hover:bg-slate-800 transition';
+                }
+            });
+        }
+
+        // =========================================================================
+        // 4. リアルタイム性癖バランスに応じた「動的アダプティブ設問選出エンジン」
+        // =========================================================================
+        function recomputeRunningElem(upToStep) {
+            const tally = { visual: 0, gap: 0, lead: 0, care: 0, thrill: 0, pure: 0 };
+            for (let i = 0; i < upToStep; i++) {
+                const q = appState.selectedQuestions[i];
+                const cIdx = appState.answers[i];
+                if (q && cIdx !== undefined && q.choices[cIdx]?.elem) {
+                    const el = q.choices[cIdx].elem;
+                    Object.keys(tally).forEach(k => {
+                        tally[k] += (el[k] || 0);
+                    });
+                }
+            }
+            appState.runningElem = tally;
+            return tally;
+        }
+
+        function pickNextAdaptiveQuestion(stepIndex) {
+            const tally = recomputeRunningElem(stepIndex);
+            const unused = MASTER_QUESTION_POOL.filter(q => !appState.usedQuestionIds.has(q.id));
+            if (unused.length === 0) return MASTER_QUESTION_POOL[0];
+
+            // エレメントのランキング算出
+            const sortedElems = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+            const topElem = sortedElems[0][0];
+            const secondElem = sortedElems[1][0];
+            const lowestElem = sortedElems[sortedElems.length - 1][0];
+
+            let candidates = [];
+            let reasonLabel = '初期プロファイリング出題';
+
+            if (stepIndex < 6) {
+                // 【序盤 1〜6問目】：6大エレメントを1問ずつバランスよくプロファイリング
+                const elemOrder = ['visual', 'gap', 'care', 'lead', 'thrill', 'pure'];
+                const targetElem = elemOrder[stepIndex % elemOrder.length];
+                candidates = unused.filter(q => q.primaryElem === targetElem && q.depth <= 2);
+                reasonLabel = `基礎波形スキャン（${ELEMENT_META[targetElem].label}）`;
+            } else if (stepIndex < 14) {
+                // 【中盤 7〜14問目】：偶数番目は「現在突出している性癖の深掘り」、奇数番目は「2番手・手薄軸によるバランス＆ギャップ検証」
+                if (stepIndex % 2 === 0) {
+                    candidates = unused.filter(q => q.primaryElem === topElem && q.depth >= 2);
+                    reasonLabel = `メイン性癖深掘り（${ELEMENT_META[topElem].label}強化）`;
+                } else {
+                    const target = (stepIndex % 4 === 1) ? secondElem : lowestElem;
+                    candidates = unused.filter(q => q.primaryElem === target);
+                    reasonLabel = (target === secondElem)
+                        ? `複合シナジー判定（${ELEMENT_META[secondElem].label}）`
+                        : `バランス広角測定（${ELEMENT_META[lowestElem].label}）`;
+                }
+            } else {
+                // 【終盤 15〜20問目】：その人の性癖バランス（特化か博愛か）に応じて、depth=3のディープ・特殊性癖問題を重点投入
+                const vals = Object.values(tally);
+                const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+                const stdDev = Math.sqrt(vals.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / vals.length);
+
+                if (stdDev >= 5.0) {
+                    // 特化傾向が強い場合：トップ2軸のディープ問題（depth 3優先）
+                    candidates = unused.filter(q => (q.primaryElem === topElem || q.primaryElem === secondElem) && q.depth === 3);
+                    reasonLabel = `深淵フェチ最終審問（${ELEMENT_META[topElem].label}極限）`;
+                } else {
+                    // バランス・ギャップ傾向が強い場合：全軸のディープ問題（depth 3優先）
+                    candidates = unused.filter(q => q.depth === 3);
+                    reasonLabel = `深淵フェチ最終審問（二面性・特殊性癖）`;
+                }
+            }
+
+            if (candidates.length === 0) {
+                candidates = unused;
+            }
+
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            appState.usedQuestionIds.add(chosen.id);
+            appState.adaptiveReasonLog[stepIndex] = reasonLabel;
+            return chosen;
+        }
+
+        function startDiagnosis() {
+            const rawName = document.getElementById('inputName').value.trim();
+            appState.playerName = rawName || '名無しの紳士';
+
+            appState.selectedQuestions = [];
+            appState.usedQuestionIds = new Set();
+            appState.currentStep = 0;
+            appState.answers = [];
+            appState.adaptiveReasonLog = [];
+            appState.runningElem = { visual: 0, gap: 0, lead: 0, care: 0, thrill: 0, pure: 0 };
+
+            // 1問目を動的選出
+            const firstQ = pickNextAdaptiveQuestion(0);
+            appState.selectedQuestions.push(firstQ);
+
+            // 画面切り替え
+            document.getElementById('screen-setup').classList.add('hidden');
+            document.getElementById('screen-result').classList.add('hidden');
+            document.getElementById('screen-quiz').classList.remove('hidden');
+            document.getElementById('topResetBtn').classList.remove('hidden');
+
+            renderQuizStep();
+        }
+
+        // =========================================================================
+        // 5. クイズ進行・描画（全60問から動的20問・マスクデータ仕様）
+        // =========================================================================
+        function renderQuizStep() {
+            const q = appState.selectedQuestions[appState.currentStep];
+            const total = TOTAL_QUESTIONS_TO_ASK; // 20
+            const stepNum = appState.currentStep + 1;
+
+            // 全20問を1回表〜延長10回裏に対応させる
+            const inningNum = Math.ceil(stepNum / 2);
+            const halfText = stepNum % 2 === 1 ? '表' : '裏';
+            const inningLabel = inningNum === 10 ? `延長10回${halfText}` : `${inningNum}回${halfText}`;
+
+            document.getElementById('quizInningBadge').textContent = `${inningLabel}（${stepNum} / ${total}）`;
+            document.getElementById('quizAdaptiveBadge').textContent = `📡 ${appState.adaptiveReasonLog[appState.currentStep] || '動的選出'}`;
+            document.getElementById('quizThemeBadge').textContent = `カテゴリー：${q.category}`;
+            document.getElementById('quizProgressBar').style.width = `${Math.round((stepNum / total) * 100)}%`;
+            document.getElementById('quizQuestionTitle').textContent = q.question;
+
+            // A / B カードの内容反映（能力ヒント完全マスク）
+            const cA = q.choices[0];
+            const cB = q.choices[1];
+
+            document.getElementById('choiceCatchA').textContent = cA.catchCopy;
+            document.getElementById('choiceEmojiA').textContent = cA.emoji;
+            document.getElementById('choiceTitleA').textContent = cA.title;
+            document.getElementById('choiceDescA').textContent = cA.desc;
+
+            document.getElementById('choiceCatchB').textContent = cB.catchCopy;
+            document.getElementById('choiceEmojiB').textContent = cB.emoji;
+            document.getElementById('choiceTitleB').textContent = cB.title;
+            document.getElementById('choiceDescB').textContent = cB.desc;
+
+            // 戻るボタン表示制御
+            const prevBtn = document.getElementById('prevQuizBtn');
+            prevBtn.style.visibility = appState.currentStep > 0 ? 'visible' : 'hidden';
+
+            // アニメーション再トリガー
+            const quizScreen = document.getElementById('screen-quiz');
+            quizScreen.classList.remove('animate-pop');
+            void quizScreen.offsetWidth;
+            quizScreen.classList.add('animate-pop');
+        }
+
+        function handleChoice(choiceIdx) {
+            appState.answers[appState.currentStep] = choiceIdx;
+
+            if (appState.currentStep + 1 < TOTAL_QUESTIONS_TO_ASK) {
+                const nextStep = appState.currentStep + 1;
+                // まだ次の設問が選ばれていない場合は、ここまでの回答バランスから動的に選出
+                if (!appState.selectedQuestions[nextStep]) {
+                    const nextQ = pickNextAdaptiveQuestion(nextStep);
+                    appState.selectedQuestions.push(nextQ);
+                }
+                appState.currentStep = nextStep;
+                renderQuizStep();
+            } else {
+                finishDiagnosis();
+            }
+        }
+
+        function prevQuestion() {
+            if (appState.currentStep > 0) {
+                // 戻って回答を変えた場合に次の問題が再度リアルタイム選出されるよう、未来の設問キャッシュをクリア
+                while (appState.selectedQuestions.length > appState.currentStep) {
+                    const removed = appState.selectedQuestions.pop();
+                    if (removed) appState.usedQuestionIds.delete(removed.id);
+                }
+                appState.currentStep--;
+                renderQuizStep();
+            }
+        }
+
+        // =========================================================================
+        // 6. 性癖バランス解析＆リアル能力査定・具体的11ポジション決定ロジック
+        // ※インフレを抑え、本家パワプロらしく長所と短所がはっきり出る査定に調整
+        // =========================================================================
+        function getRankLetter(val) {
+            if (val >= 90) return 'S';
+            if (val >= 80) return 'A';
+            if (val >= 70) return 'B';
+            if (val >= 60) return 'C';
+            if (val >= 50) return 'D';
+            if (val >= 40) return 'E';
+            if (val >= 20) return 'F';
+            return 'G';
+        }
+
+        function clampStat(val, min = 18, max = 94) {
+            return Math.max(min, Math.min(max, Math.round(val)));
+        }
+
+        function finishDiagnosis() {
+            // 1. 20問の素点合計を集計
+            let sumStats = {
+                meet: 0, power: 0, speed: 0, arm: 0, field: 0, catch: 0,
+                velo: 0, ctrl: 0, stam: 0
+            };
+
+            // 11種類の具体的守備位置スコア
+            let posScores = {
+                starter: 0, reliever: 0, closer: 0,
+                catcher: 0, first: 0, second: 0, third: 0, short: 0,
+                left: 0, center: 0, right: 0
+            };
+
+            let elem = { visual: 0, gap: 0, lead: 0, care: 0, thrill: 0, pure: 0 };
+            let chosenItems = [];
+            let blueList = [];
+            let pitchBlueList = [];
+            let redList = [];
+            let greenList = [];
+
+            let pitchMap = {
+                left: { dirLabel: '← スライダー系', arrow: '←', name: 'スライダー', rawAdd: 0 },
+                downleft: { dirLabel: '↙ カーブ・スラーブ系', arrow: '↙', name: 'カーブ', rawAdd: 0 },
+                down: { dirLabel: '↓ フォーク・落ちる球', arrow: '↓', name: 'フォーク', rawAdd: 0 },
+                downright: { dirLabel: '↘ シンカー・チェンジ系', arrow: '↘', name: 'チェンジアップ', rawAdd: 0 },
+                right: { dirLabel: '→ シュート・ツーシーム', arrow: '→', name: 'シュート', rawAdd: 0 }
+            };
+
+            appState.selectedQuestions.forEach((q, idx) => {
+                const cIdx = appState.answers[idx] ?? 0;
+                const choice = q.choices[cIdx];
+                chosenItems.push(choice);
+
+                sumStats.meet  += choice.stats.meet;
+                sumStats.power += choice.stats.power;
+                sumStats.speed += choice.stats.speed;
+                sumStats.arm   += choice.stats.arm;
+                sumStats.field += choice.stats.field;
+                sumStats.catch += choice.stats.catch;
+                sumStats.velo  += choice.stats.velo;
+                sumStats.ctrl  += choice.stats.ctrl;
+                sumStats.stam  += choice.stats.stam;
+
+                if (choice.posPts) {
+                    Object.keys(choice.posPts).forEach(pk => {
+                        if (posScores[pk] !== undefined) {
+                            posScores[pk] += choice.posPts[pk];
+                        }
+                    });
+                }
+
+                if (choice.elem) {
+                    Object.keys(choice.elem).forEach(ek => {
+                        if (elem[ek] !== undefined) {
+                            elem[ek] += choice.elem[ek];
+                        }
+                    });
+                }
+
+                if (choice.pitchType) {
+                    const pt = choice.pitchType;
+                    if (pitchMap[pt.dir]) {
+                        pitchMap[pt.dir].rawAdd += pt.add;
+                        pitchMap[pt.dir].name = pt.name;
+                    }
+                }
+
+                if (choice.blueToku) blueList.push({ ...choice.blueToku, type: 'blue' });
+                if (choice.pitchBlueToku) pitchBlueList.push({ ...choice.pitchBlueToku, type: 'blue' });
+                if (choice.redToku) redList.push({ ...choice.redToku, type: 'red' });
+                if (choice.greenToku) greenList.push({ ...choice.greenToku, type: 'green' });
+            });
+
+            // 2. インフレを抑えたリアルなベース変換（平均的な選択で 52〜55 (Dランク) になるよう正規化）
+            // 各項目の20問平均素点は約 115〜125 前後
+            const normalizeFieldStat = (rawSum) => {
+                const diffFromAvg = rawSum - 120;
+                return 53 + diffFromAvg * 0.42;
+            };
+
+            let raw = {
+                meet:  normalizeFieldStat(sumStats.meet),
+                power: normalizeFieldStat(sumStats.power),
+                speed: normalizeFieldStat(sumStats.speed),
+                arm:   normalizeFieldStat(sumStats.arm),
+                field: normalizeFieldStat(sumStats.field),
+                catch: normalizeFieldStat(sumStats.catch),
+                velo:  143 + (sumStats.velo - 40) * 0.48,
+                ctrl:  52 + (sumStats.ctrl - 135) * 0.40,
+                stam:  52 + (sumStats.stam - 130) * 0.42
+            };
+
+            // 3. 性癖6大エレメントの全体バランス解析（特化度 vs 博愛バランス度 ＆ 相反シナジー）
+            const elemEntries = Object.entries(elem).sort((a, b) => b[1] - a[1]);
+            const topElemKey = elemEntries[0][0];
+            const secondElemKey = elemEntries[1][0];
+            const elemVals = Object.values(elem);
+            const elemMean = elemVals.reduce((a, b) => a + b, 0) / elemVals.length;
+            const elemVariance = elemVals.reduce((acc, v) => acc + Math.pow(v - elemMean, 2), 0) / elemVals.length;
+            const elemStdDev = Math.sqrt(elemVariance);
+
+            const hasPureThrillSynergy = (elem.pure >= 16 && elem.thrill >= 16);
+            const hasLeadCareSynergy = (elem.lead >= 15 && elem.care >= 15);
+            const hasDualSynergy = hasPureThrillSynergy || hasLeadCareSynergy || elem.gap >= 25;
+
+            let balanceType = 'オールラウンド博愛型';
+            let balanceShort = '博愛バランス型';
+            let balanceReasonText = '';
+
+            // 6項目のうち上位と下位にトレードオフ（メリハリ）を効かせる
+            if (elemStdDev >= 6.8) {
+                // ① 一途・特化型（長所がA〜B後半へ伸びる代わりに、短所がE〜Fへ下がるリアルな専門職査定）
+                balanceType = '一点突破・性癖スペシャリスト型';
+                balanceShort = '一点突破特化型';
+
+                if (topElemKey === 'lead' || topElemKey === 'thrill') {
+                    raw.power += 11; raw.velo += 5;
+                    raw.field -= 7;  raw.catch -= 8; raw.ctrl -= 6;
+                    posScores.closer += 8; posScores.first += 7; posScores.third += 6; posScores.left += 6;
+                } else if (topElemKey === 'visual') {
+                    raw.speed += 10; raw.arm += 8;
+                    raw.power -= 6;  raw.catch -= 5; raw.stam -= 6;
+                    posScores.center += 8; posScores.right += 7; posScores.short += 5;
+                } else if (topElemKey === 'care') {
+                    raw.catch += 11; raw.stam += 9;
+                    raw.speed -= 8;  raw.power -= 5;
+                    posScores.catcher += 9; posScores.starter += 7; posScores.first += 4;
+                } else {
+                    raw.meet += 10;  raw.field += 8; raw.ctrl += 9;
+                    raw.power -= 7;  raw.velo -= 3;
+                    posScores.second += 8; posScores.short += 7; posScores.reliever += 7;
+                }
+
+                balanceReasonText = `特定の性癖エレメント（${ELEMENT_META[topElemKey].label}）に一点集中した「特化型波形」を検出！長所が突出する代わりに他を削ぎ落としたピーキーな専門職査定となり、その武器が最も活きる具体的ポジションが選出されました。`;
+
+            } else if (hasDualSynergy) {
+                // ② 二面性ギャップ萌えシナジー型（攻守に意外な武器を持つ実戦派）
+                balanceType = '二面性ギャップ萌えシナジー型';
+                balanceShort = '二面性シナジー型';
+
+                raw.meet += 5; raw.power += 5; raw.ctrl += 4;
+                raw.catch -= 4; raw.stam -= 3;
+                posScores.reliever += 7; posScores.third += 6; posScores.right += 6; posScores.short += 5;
+
+                balanceReasonText = `「清楚と背徳」「支配と献身」など相反する性癖を併せ持つ【ギャップ萌えシナジー】が発動！表と裏の二面性がセットアッパー（中継ぎ）や強打のコーナーポジションなど、複数の守備適性を開花させました。`;
+
+            } else {
+                // ③ 全方位・博愛バランス型（極端なA/Sはないが、C〜Dで綺麗にまとまったユーティリティ型）
+                balanceType = '全方位・博愛ユーティリティ型';
+                balanceShort = '全方位バランス型';
+
+                // 突出した値を少し抑え、低い値を底上げしてC〜Dランク帯に整える
+                ['meet', 'power', 'speed', 'arm', 'field', 'catch'].forEach(k => {
+                    raw[k] = raw[k] * 0.78 + 56 * 0.22;
+                });
+                posScores.short += 7; posScores.second += 7; posScores.center += 6; posScores.starter += 6; posScores.catcher += 5;
+
+                balanceReasonText = `6つの性癖エレメントが偏りなく整った「博愛ユーティリティ波形」です。極端な弱点を作らない安定した査定となり、総合力が求められるセンターライン（遊撃・二塁・中堅・先発・捕手）に高い適性が表れました。`;
+            }
+
+            // 4. 能力値のバランス特徴から11ポジションの適性スコアを最終補正
+            if (raw.velo >= 151 && raw.stam < 54) posScores.closer += 6;
+            if (raw.ctrl >= 62 && raw.stam < 58) posScores.reliever += 6;
+            if (raw.stam >= 62 && raw.ctrl >= 55) posScores.starter += 6;
+            if (raw.speed >= 66 && raw.field >= 60) posScores.center += 5;
+            if (raw.arm >= 65 && raw.power >= 58) posScores.right += 5;
+            if (raw.power >= 65 && raw.field < 52) { posScores.first += 5; posScores.left += 5; }
+            if (raw.field >= 65 && raw.arm >= 60) posScores.short += 5;
+            if (raw.field >= 63 && raw.meet >= 60) posScores.second += 5;
+            if (raw.catch >= 66) posScores.catcher += 6;
+
+            // 11ポジションからメイン守備位置とサブ守備位置を決定
+            const sortedPositions = Object.entries(posScores).sort((a, b) => b[1] - a[1]);
+            const mainPosKey = sortedPositions[0][0];
+            const topPosScore = sortedPositions[0][1];
+            const isMainPitcher = POSITION_META[mainPosKey].isPitcher;
+
+            // 野手ポジションのみ・投手ポジションのみの最高スコアを比較し、ごく稀な「二刀流」判定を行う
+            const pitcherKeys = ['starter', 'reliever', 'closer'];
+            const fielderKeys = ['catcher', 'first', 'second', 'third', 'short', 'left', 'center', 'right'];
+
+            const bestPitcherEntry = sortedPositions.find(([k]) => pitcherKeys.includes(k));
+            const bestFielderEntry = sortedPositions.find(([k]) => fielderKeys.includes(k));
+            const maxPitchScore = bestPitcherEntry ? bestPitcherEntry[1] : 0;
+            const maxFieldScore = bestFielderEntry ? bestFielderEntry[1] : 0;
+
+            // 二刀流条件：投手最高適性と野手最高適性の差が1点以内、かつ相反シナジー（hasDualSynergy）を持ち、さらに特定のハッシュ条件を満たすレアケース（約6%未満）
+            const nameSeed = appState.playerName.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+            const answerSeed = appState.answers.reduce((acc, v, i) => acc + (v * (i + 1)), 0);
+            const rareRoll = ((nameSeed + answerSeed) % 12 === 0);
+            const isTwoWay = (Math.abs(maxPitchScore - maxFieldScore) <= 1 && hasDualSynergy) || (Math.abs(maxPitchScore - maxFieldScore) === 0 && rareRoll);
+
+            // サブポジション選出（基本はメインと同じ区分のみ。二刀流覚醒時のみ投打横断でサブ適性を付与）
+            const subThreshold = (balanceShort === '一点突破特化型') ? 0.85 : 0.72;
+            const maxSubCount = isTwoWay ? 2 : ((balanceShort === '一点突破特化型') ? 1 : 2);
+
+            let subPosKeys = sortedPositions
+                .slice(1)
+                .filter(([k, sc]) => {
+                    if (isMainPitcher) {
+                        return POSITION_META[k].isPitcher && sc >= topPosScore * 0.76;
+                    } else {
+                        return !POSITION_META[k].isPitcher && sc >= topPosScore * subThreshold;
+                    }
+                })
+                .slice(0, maxSubCount)
+                .map(entry => entry[0]);
+
+            // 二刀流の場合は反対区分のトップポジションもサブ適性に追加
+            if (isTwoWay) {
+                const crossPosKey = isMainPitcher ? bestFielderEntry[0] : bestPitcherEntry[0];
+                if (crossPosKey && !subPosKeys.includes(crossPosKey)) {
+                    subPosKeys.unshift(crossPosKey);
+                    subPosKeys = subPosKeys.slice(0, 2);
+                }
+            }
+
+            // 5. 決定した具体ポジションに応じたリアルな補正（高くなりすぎないようトレードオフ込み）
+            if (mainPosKey === 'closer') {
+                raw.velo += 4; raw.stam -= 12;
+            } else if (mainPosKey === 'reliever') {
+                raw.velo += 2; raw.ctrl += 4; raw.stam -= 7;
+            } else if (mainPosKey === 'starter') {
+                raw.stam += 8; raw.ctrl += 3; raw.velo -= 2;
+            } else if (mainPosKey === 'catcher') {
+                raw.catch += 5; raw.speed -= 6;
+            } else if (mainPosKey === 'first' || mainPosKey === 'left') {
+                raw.power += 5; raw.field -= 5;
+            } else if (mainPosKey === 'short' || mainPosKey === 'second') {
+                raw.field += 5; raw.power -= 4;
+            } else if (mainPosKey === 'center') {
+                raw.speed += 5; raw.power -= 3;
+            } else if (mainPosKey === 'right' || mainPosKey === 'third') {
+                raw.arm += 5; raw.power += 3; raw.catch -= 4;
+            }
+
+            // 6. 二刀流以外の場合の「完全分業・徹底抑制補正」
+            // 二刀流ではない（＝投手専任または野手専任）場合、反対側の能力を徹底的に低く（G〜Fランク相当）押し下げる
+            if (!isTwoWay) {
+                if (isMainPitcher) {
+                    // 投手専任：野手能力を最低値（18〜25）にガチガチに固定・抑制
+                    raw.meet = 18;
+                    raw.power = 18;
+                    raw.speed = 22;
+                    raw.arm = 35; // 投手なので肩はある程度残す
+                    raw.field = 20;
+                    raw.catch = 18;
+                } else {
+                    // 野手専任：投手能力を最低値に固定・抑制
+                    raw.velo = 132; // 野手なので投げる時は132km/h程度の遅い直球のみ
+                    raw.ctrl = 22;
+                    raw.stam = 20;
+                }
+            }
+
+            // 7. インフレ防止キャップ処理（野手6項目の平均が 62 (Cランク前半) を超える場合は全体をマイルドに圧縮）
+            const fieldKeys = ['meet', 'power', 'speed', 'arm', 'field', 'catch'];
+            const currentAvg = fieldKeys.reduce((acc, k) => acc + raw[k], 0) / fieldKeys.length;
+            if (currentAvg > 61) {
+                const excess = currentAvg - 61;
+                fieldKeys.forEach(k => {
+                    raw[k] -= excess * 0.85;
+                });
+            }
+
+            // 最終数値クランプ（18〜92の範囲：滅多にSは出ず、最大の武器がA〜B、他がC〜Eになるリアル仕様）
+            const finalStats = {
+                meet:  clampStat(raw.meet, 18, 91),
+                power: clampStat(raw.power, 18, 92),
+                speed: clampStat(raw.speed, 20, 92),
+                arm:   clampStat(raw.arm, isMainPitcher && !isTwoWay ? 30 : 22, 91),
+                field: clampStat(raw.field, 18, 91),
+                catch: clampStat(raw.catch, 18, 91),
+                velo:  Math.max(130, Math.min(161, Math.round(raw.velo))),
+                ctrl:  clampStat(raw.ctrl, 18, 90),
+                stam:  clampStat(raw.stam, 18, 91)
+            };
+
+            // 弾道決定 (1〜4)（野手専任で二刀流ではない場合は弾道1に固定）
+            let trajectory = 1;
+            if (isTwoWay || !isMainPitcher) {
+                if (finalStats.power >= 76) trajectory = 4;
+                else if (finalStats.power >= 58) trajectory = 3;
+                else if (finalStats.speed >= 72 && finalStats.power < 46) trajectory = 1;
+                else trajectory = 2;
+            }
+
+            // 金特（超特殊能力）の決定（インフレ抑制のため厳選1個のみ付与）
+            let goldTokuList = determineGoldToku(finalStats, elem, topElemKey, balanceShort, chosenItems, mainPosKey);
+
+            // 赤特の付与（リアルなパワプロらしさのため最低1〜2個は必ず付与）
+            if (redList.length === 0) {
+                if (balanceShort === '一点突破特化型') {
+                    redList.push({
+                        name: 'こだわり過多',
+                        type: 'red',
+                        desc: '【赤特】自分の性癖ストライクゾーンへのこだわりが強すぎて、興味のない球種には反応が遅れることがある。'
+                    });
+                } else if (hasDualSynergy) {
+                    redList.push({
+                        name: 'ギャップ過敏症',
+                        type: 'red',
+                        desc: '【赤特】相手バッテリーが普段と違う配球（ギャップ）を見せてくると、勝手にドキッとして見惚れてしまう。'
+                    });
+                } else {
+                    redList.push({
+                        name: '器用貧乏（博愛）',
+                        type: 'red',
+                        desc: '【赤特】どの球種も魅力的に見えてしまい、フルカウントでどの球を待つか一瞬迷いが生じる。'
+                    });
+                }
+            }
+
+            // 青特・赤特統合の特別バッジ「特定タイプに弱い」を1つ追加
+            const mixTokuNameMap = {
+                visual: '美脚・衣装に弱い',
+                gap: '照れ顔ギャップに弱い',
+                lead: '強気ヒロインに弱い',
+                care: '甘やかしお姉さんに弱い',
+                thrill: '背徳シチュに弱い',
+                pure: '清楚・純愛に弱い'
+            };
+            const mixToku = {
+                name: mixTokuNameMap[topElemKey] || '涙目に弱い',
+                type: 'mix',
+                desc: `【青赤複合】通常の相手には実力を発揮するが、最も高い性癖エレメント（${ELEMENT_META[topElemKey].label}）を持つ相手には急にデレて甘くなる。`
+            };
+
+            // 変化球の整理（総変化量がリアルな 5〜9 程度に収まるよう調整、最大3〜4球種）
+            let activePitches = Object.values(pitchMap)
+                .filter(p => p.rawAdd > 0)
+                .map(p => ({
+                    ...p,
+                    level: Math.max(1, Math.min(6, Math.round(p.rawAdd * 0.35)))
+                }));
+
+            if (!isTwoWay && isMainPitcher && activePitches.length < 2) {
+                activePitches = [
+                    { dirLabel: '← スライダー系', arrow: '←', name: 'スライダー', level: 3 },
+                    { dirLabel: '↓ フォーク・落ちる球', arrow: '↓', name: 'フォーク', level: 2 }
+                ];
+            } else if (!isTwoWay && !isMainPitcher) {
+                // 野手専任の場合は変化球はスライダー1種類・変化量1のみのポンコツ投手適性に抑える
+                activePitches = [
+                    { dirLabel: '← スライダー系', arrow: '←', name: 'スライダー', level: 1 }
+                ];
+            }
+            activePitches.sort((a, b) => b.level - a.level);
+            // 抑え・中継ぎは2〜3球種、先発は3〜4球種
+            const maxPitchTypes = (mainPosKey === 'closer' || mainPosKey === 'reliever') ? 3 : 4;
+            activePitches = activePitches.slice(0, maxPitchTypes);
+
+            // オリジナル変化球名の生成
+            const origPitch = generateOriginalPitch(chosenItems, activePitches[0]);
+
+            // 背番号の生成（具体的11ポジション対応）
+            const jerseyNum = generateJerseyNumber(chosenItems, finalStats, mainPosKey);
+
+            // 総合★スコア算出（本家パワプロ風の220〜390前後のリアルな数値）
+            const pitchStarScore = Math.round(
+                ((finalStats.velo - 120) * 3.2 + finalStats.ctrl * 1.4 + finalStats.stam * 1.3) +
+                activePitches.reduce((acc, p) => acc + p.level * 12, 0) +
+                goldTokuList.length * 25 - redList.length * 6
+            );
+            const fieldStarScore = Math.round(
+                (finalStats.meet + finalStats.power + finalStats.speed + finalStats.arm + finalStats.field + finalStats.catch) * 0.72 +
+                goldTokuList.length * 25 + Math.min(5, blueList.length) * 8 - redList.length * 6
+            );
+            const starScore = isTwoWay
+                ? Math.round(Math.max(pitchStarScore, fieldStarScore) * 1.08)
+                : (isMainPitcher ? pitchStarScore : fieldStarScore);
+
+            // スカウト寸評テキスト生成
+            const scoutData = generateScoutCommentary(
+                appState.playerName,
+                finalStats,
+                elem,
+                topElemKey,
+                secondElemKey,
+                balanceType,
+                balanceShort,
+                balanceReasonText,
+                chosenItems,
+                goldTokuList[0],
+                mainPosKey,
+                subPosKeys,
+                isTwoWay
+            );
+
+            // 投打はタイトル画面でユーザーが選択した appState.selectedHand をそのままセット（能力には一切影響なし）
+            appState.generatedPlayer = {
+                name: appState.playerName,
+                position: mainPosKey,
+                subPositions: subPosKeys,
+                isPitcher: isMainPitcher,
+                isTwoWay: isTwoWay,
+                posScores: posScores,
+                hand: appState.selectedHand,
+                jerseyNum,
+                trajectory,
+                stats: finalStats,
+                pitches: activePitches,
+                origPitch,
+                goldTokuList,
+                blueList,
+                pitchBlueList,
+                redList,
+                greenList,
+                mixToku,
+                chosenItems,
+                elem,
+                balanceType,
+                balanceShort,
+                balanceReasonText,
+                starScore,
+                scoutData
+            };
+
+            // 結果画面へ遷移
+            document.getElementById('screen-quiz').classList.add('hidden');
+            document.getElementById('screen-result').classList.remove('hidden');
+
+            renderResultScreen();
+        }
+
+        // 金特（超特殊能力）の決定関数
+        function determineGoldToku(stats, elem, topElemKey, balanceShort, chosenItems, mainPosKey) {
+            const isPitcher = POSITION_META[mainPosKey]?.isPitcher;
+
+            if (isPitcher) {
+                if (mainPosKey === 'closer' || stats.velo >= 153) {
+                    return [{
+                        name: '怪童',
+                        type: 'gold',
+                        desc: '【金特：圧倒的支配力の結晶】強気な主導権とスリルを好む性癖が剛速球に宿り、打者の体感速度を極限まで引き上げる。'
+                    }];
+                } else if (mainPosKey === 'reliever' || stats.ctrl >= 72) {
+                    return [{
+                        name: '精密機械',
+                        type: 'gold',
+                        desc: '【金特：ミリ単位のフェティシズム】絶対領域や細部の視覚美にこだわる審美眼が、針の穴を通す抜群の制球力を生み出した。'
+                    }];
+                } else {
+                    return [{
+                        name: 'ドクターK',
+                        type: 'gold',
+                        desc: '【金特：深淵なるギャップの魔術】緩急と二面性のギャップで打者の理性を崩壊させ、面白いように空振り三振の山を築く。'
+                    }];
+                }
+            } else {
+                if (balanceShort === '一点突破特化型') {
+                    if (topElemKey === 'lead' || topElemKey === 'thrill' || stats.power >= 75) {
+                        return [{
+                            name: 'アーチスト',
+                            type: 'gold',
+                            desc: '【金特：一途な欲望の放物線】特定の性癖へ一点集中した凄まじい熱量がバットに宿り、美しい放物線でスタンド最深部へ突き刺す。'
+                        }];
+                    } else if (topElemKey === 'visual' || stats.speed >= 75) {
+                        return [{
+                            name: '電光石火',
+                            type: 'gold',
+                            desc: '【金特：一瞬のチラリズムを捉える脚】0.5秒の視覚的ロマンを見逃さない瞬発力で、塁間を光のような速度で駆け抜ける。'
+                        }];
+                    }
+                }
+
+                if (mainPosKey === 'catcher' || elem.care >= 20) {
+                    return [{
+                        name: '球界の頭脳',
+                        type: 'gold',
+                        desc: '【金特：すべてを包み込む聖母の包容力】深い献身性と観察眼で投手の潜在能力を120%引き出し、チームを勝利へ導く。'
+                    }];
+                } else if (mainPosKey === 'short' || mainPosKey === 'second' || stats.field >= 72) {
+                    return [{
+                        name: '魔術師',
+                        type: 'gold',
+                        desc: '【金特：華麗なるフェチズムの極致】細部の仕草やギャップを愛する繊細な感覚が、神業的なグラブ捌きとなって守備機会を支配する。'
+                    }];
+                } else {
+                    return [{
+                        name: '安打製造機',
+                        type: 'gold',
+                        desc: '【金特：全方位を愛する博愛のバット】あらゆる属性の魅力を受け止める柔軟なバットコントロールで、広角にヒットを量産する。'
+                    }];
+                }
+            }
+        }
+
+        // 性癖オリジナル変化球の生成関数
+        function generateOriginalPitch(chosenItems, mainPitch) {
+            const prefixes = ['絶対領域', 'クーデレ', '聖母の', '小悪魔', '背徳の', 'むっつり', '純愛', 'ギャップ萌え', '眼帯解放', '催眠'];
+            const suffixes = ['ライジング', 'スパイラル', 'フォール', 'ミラージュ', 'ドライブ', 'スプラッシュ', 'ファントム', 'ロマン'];
+
+            const firstChoice = chosenItems[0];
+            const lastChoice = chosenItems[chosenItems.length - 1];
+
+            let prefix = prefixes[0];
+            if (firstChoice && firstChoice.shortTag) {
+                prefix = firstChoice.shortTag.replace('派', '');
+            }
+
+            const seed = (lastChoice?.title?.length || 5) % suffixes.length;
+            const suffix = suffixes[seed];
+
+            const basePitchName = mainPitch ? mainPitch.name : 'ストレート';
+            const dirText = mainPitch ? `${mainPitch.arrow} ${basePitchName}系` : '↑ 第2ストレート系';
+
+            return {
+                name: `${prefix}・${suffix}`,
+                dirText: dirText
+            };
+        }
+
+        // 背番号の決定関数
+        function generateJerseyNumber(chosenItems, stats, mainPosKey) {
+            const posDefaultNums = {
+                starter: 18,
+                reliever: 21,
+                closer: 11,
+                catcher: 27,
+                first: 3,
+                second: 4,
+                third: 5,
+                short: 6,
+                left: 8,
+                center: 1,
+                right: 9
+            };
+            const base = posDefaultNums[mainPosKey] ?? 10;
+            const offset = (stats.meet + stats.power + stats.velo) % 5;
+            // 代表的なエース・主力ナンバーまたは語呂合わせナンバーを返す
+            if (offset === 0) return base;
+            if (mainPosKey === 'closer' && offset === 1) return 22;
+            if (mainPosKey === 'starter' && offset === 2) return 14;
+            if (mainPosKey === 'first' && offset === 1) return 55;
+            if (mainPosKey === 'right' && offset === 2) return 51;
+            return base + offset;
+        }
+
+        function generateScoutCommentary(name, stats, elem, topElemKey, secondElemKey, balanceType, balanceShort, balanceReasonText, chosenItems, mainGold, mainPosKey, subPosKeys, isTwoWay) {
+            const topElemName = ELEMENT_META[topElemKey].label;
+            const secondElemName = ELEMENT_META[secondElemKey].label;
+            const axisLabel = `${balanceShort}（${topElemName}×${secondElemName}）`;
+
+            const mainPosInfo = POSITION_META[mainPosKey];
+            const subPosNames = subPosKeys.map(k => POSITION_META[k].label).join('・');
+            const subPosText = subPosNames ? `（サブ適性：${subPosNames}）` : '（専任スペシャリスト）';
+            const twoWayHeadlinePrefix = isTwoWay ? '【★稀代の二刀流覚醒】' : '';
+
+            const fav1 = chosenItems[0]?.title || '王道属性';
+            const favMid = chosenItems[9]?.title || '深掘り属性';
+            const favLast = chosenItems[chosenItems.length - 1]?.title || '究極の愛';
+
+            let bestStat, weakStat;
+            if (mainPosInfo.isPitcher && !isTwoWay) {
+                const pStats = [
+                    { label: `球速（${stats.velo}km/h）`, val: Math.min(90, Math.round((stats.velo - 120) * 2.1)) },
+                    { label: 'コントロール', val: stats.ctrl },
+                    { label: 'スタミナ', val: stats.stam }
+                ];
+                pStats.sort((a, b) => b.val - a.val);
+                bestStat = pStats[0];
+                weakStat = pStats[pStats.length - 1];
+            } else {
+                const statNames = [
+                    { key: 'meet', label: 'ミート力', val: stats.meet },
+                    { key: 'power', label: '長打力（パワー）', val: stats.power },
+                    { key: 'speed', label: '脚力（走力）', val: stats.speed },
+                    { key: 'arm', label: '強肩（肩力）', val: stats.arm },
+                    { key: 'field', label: '守備技術', val: stats.field },
+                    { key: 'catch', label: '捕球（包容力）', val: stats.catch }
+                ];
+                statNames.sort((a, b) => b.val - a.val);
+                bestStat = statNames[0];
+                weakStat = statNames[statNames.length - 1];
+            }
+
+            const headline = `${twoWayHeadlinePrefix}「${topElemName}×${secondElemName}が織りなす、${mainPosInfo.label}の${balanceShort}」`;
+
+            const twoWayNote = isTwoWay
+                ? `\n★さらに投手適性と野手適性が奇跡的な高次元で拮抗したため、極めて稀な『二刀流選手』として特別登録された！上部のタブから野手・投手の両能力を確認できるぞ。`
+                : '';
+
+            const report = `【スカウト全60問プール・動的20問査定レポート】\n` +
+                `リアルタイム波形解析で選び抜かれた20問の結果、あなたの性癖タイプは『${balanceType}』と判定され、最も適性の高い具体的ポジションは「${mainPosInfo.label}」${subPosText}に決定した！${twoWayNote}\n` +
+                `「${fav1}」や「${favMid}」、さらに深淵領域の「${favLast}」を選び抜いたフェティシズムは能力配分にもリアルに反映されており、最大の武器である${bestStat.label}（${getRankLetter(bestStat.val)}・${bestStat.val}）が光る一方、${weakStat.label}（${getRankLetter(weakStat.val)}・${weakStat.val}）には人間味あふれる隙も見られる。\n` +
+                `性癖バランスから覚醒した超特殊能力『${mainGold.name}』を武器に、プロの舞台で唯一無二の輝きを放つ選手だ。`;
+
+            return { headline, axisLabel, report };
+        }
+
+        // =========================================================================
+        // 7. パワプロ風結果画面のレンダリング
+        // =========================================================================
+        function renderLargeAptitudePanel(p) {
+            const area = document.getElementById('resLargeAptitudeArea');
+            const divBadge = document.getElementById('resPlayerDivisionBadge');
+            const mainMeta = POSITION_META[p.position] || POSITION_META.short;
+
+            if (p.isTwoWay) {
+                divBadge.textContent = '★ 二刀流登録（投打兼任）';
+                divBadge.className = 'text-xs font-black px-3 py-0.5 rounded bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-950 shadow';
+            } else if (p.isPitcher) {
+                divBadge.textContent = '投手専任登録（野手能力なし）';
+                divBadge.className = 'text-xs font-extrabold px-2.5 py-0.5 rounded bg-red-950/90 border border-red-400/60 text-red-200';
+            } else {
+                divBadge.textContent = '野手専任登録（投手能力なし）';
+                divBadge.className = 'text-xs font-extrabold px-2.5 py-0.5 rounded bg-blue-900/90 border border-blue-400/50 text-cyan-200';
+            }
+
+            // メイン守備力数値（野手はstats.field、投手はコン・スタ平均）
+            const mainAptVal = p.isPitcher
+                ? Math.round((p.stats.ctrl + p.stats.stam) / 2)
+                : p.stats.field;
+            const mainAptRank = getRankLetter(mainAptVal);
+
+            // サブポジションの適性カード生成（メインの75〜85%の守備力としてパワプロ風に算出）
+            let subCardsHTML = '';
+            if (p.subPositions && p.subPositions.length > 0) {
+                subCardsHTML = p.subPositions.map((subKey, idx) => {
+                    const sm = POSITION_META[subKey];
+                    const ratio = idx === 0 ? 0.84 : 0.75;
+                    const subVal = clampStat(Math.round(mainAptVal * ratio), 30, 85);
+                    const subRank = getRankLetter(subVal);
+                    return `
+                        <div class="flex items-center justify-between bg-slate-900/95 border-2 border-blue-400/60 rounded-xl px-3.5 py-2 shadow">
+                            <div>
+                                <div class="text-[10px] font-bold text-cyan-300">サブ適性 ${idx + 1}</div>
+                                <div class="text-base sm:text-lg font-black text-white">${sm.label}</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="rank-badge rank-${subRank}" style="width:2rem;height:2rem;font-size:1.15rem;">${subRank}</span>
+                                <span class="text-lg font-black text-yellow-300">${subVal}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                subCardsHTML = `
+                    <div class="flex items-center justify-center bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-3 text-xs font-bold text-slate-400">
+                        サブポジションなし（${mainMeta.label}一本に懸ける専任スペシャリスト）
+                    </div>
+                `;
+            }
+
+            // 全8野手ポジション（または投手3起用）の視覚的インジケーターバー
+            const fielderOrder = ['catcher', 'first', 'second', 'third', 'short', 'left', 'center', 'right'];
+            const pitcherOrder = ['starter', 'reliever', 'closer'];
+
+            let matrixHTML = '';
+            if (!p.isPitcher || p.isTwoWay) {
+                const boxes = fielderOrder.map(k => {
+                    const m = POSITION_META[k];
+                    const isMain = (p.position === k);
+                    const isSub = (p.subPositions && p.subPositions.includes(k));
+                    let boxCls = 'bg-slate-900/70 border-slate-700 text-slate-500';
+                    let mark = '-';
+                    if (isMain) {
+                        boxCls = `${m.colorCls} ring-2 ring-white scale-105 shadow-md`;
+                        mark = `◎${mainAptRank}`;
+                    } else if (isSub) {
+                        const subIdx = p.subPositions.indexOf(k);
+                        const subVal = clampStat(Math.round(mainAptVal * (subIdx === 0 ? 0.84 : 0.75)), 30, 85);
+                        boxCls = 'bg-blue-900/90 border-cyan-300 text-white shadow';
+                        mark = `○${getRankLetter(subVal)}`;
+                    }
+                    return `
+                        <div class="flex flex-col items-center justify-center p-1.5 rounded-lg border ${boxCls} transition">
+                            <span class="text-xs sm:text-sm font-black leading-none">${m.short}</span>
+                            <span class="text-[10px] font-extrabold mt-0.5">${mark}</span>
+                        </div>
+                    `;
+                }).join('');
+                matrixHTML = `
+                    <div class="mt-2 pt-2 border-t border-blue-500/20 md:col-span-12">
+                        <div class="text-[11px] font-bold text-blue-300 mb-1.5">▼ 野手全ポジション適性マップ（◎＝メイン守備位置 / ○＝サブ守備適性）</div>
+                        <div class="grid grid-cols-8 gap-1.5">${boxes}</div>
+                    </div>
+                `;
+            } else {
+                const pBoxes = pitcherOrder.map(k => {
+                    const m = POSITION_META[k];
+                    const isMain = (p.position === k);
+                    const isSub = (p.subPositions && p.subPositions.includes(k));
+                    let boxCls = 'bg-slate-900/70 border-slate-700 text-slate-500';
+                    let mark = '適性なし';
+                    if (isMain) {
+                        boxCls = `${m.colorCls} ring-2 ring-white shadow-md`;
+                        mark = '◎ メイン起用';
+                    } else if (isSub) {
+                        boxCls = 'bg-rose-950/90 border-rose-300 text-rose-100 shadow';
+                        mark = '○ 兼任適性あり';
+                    }
+                    return `
+                        <div class="flex items-center justify-between px-3 py-2 rounded-lg border ${boxCls}">
+                            <span class="text-xs sm:text-sm font-black">${m.label}</span>
+                            <span class="text-xs font-extrabold">${mark}</span>
+                        </div>
+                    `;
+                }).join('');
+                matrixHTML = `
+                    <div class="mt-2 pt-2 border-t border-blue-500/20 md:col-span-12">
+                        <div class="text-[11px] font-bold text-blue-300 mb-1.5">▼ 投手起用ロール適性（先発・中継ぎ・抑え）</div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">${pBoxes}</div>
+                    </div>
+                `;
+            }
+
+            area.innerHTML = `
+                <!-- 左：メイン守備位置ビッグカード -->
+                <div class="md:col-span-6 flex items-center justify-between bg-gradient-to-r from-blue-900/90 via-indigo-900/90 to-slate-900 border-2 border-yellow-400 rounded-xl px-4 py-3 shadow-lg">
+                    <div class="flex items-center gap-3">
+                        <span class="px-3.5 py-2 rounded-xl font-black text-xl sm:text-2xl shadow-md border-2 ${mainMeta.colorCls}">
+                            ${mainMeta.short}
+                        </span>
+                        <div>
+                            <div class="text-[11px] font-extrabold text-yellow-300">★ メイン守備位置</div>
+                            <div class="text-lg sm:text-2xl font-black text-white text-stroke-dark leading-tight">${mainMeta.label}</div>
+                            <div class="text-[11px] text-blue-200 font-bold mt-0.5">${mainMeta.roleDesc}</div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0 pl-2">
+                        <div class="text-[10px] font-bold text-blue-200 mb-0.5">適性ランク</div>
+                        <div class="flex items-center justify-end gap-1.5">
+                            <span class="rank-badge rank-${mainAptRank}">${mainAptRank}</span>
+                            <span class="text-xl sm:text-2xl font-black text-white text-stroke-dark">${mainAptVal}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右：サブ守備位置カード群 -->
+                <div class="md:col-span-6 grid grid-cols-1 ${p.subPositions && p.subPositions.length > 1 ? 'sm:grid-cols-2' : ''} gap-2.5">
+                    ${subCardsHTML}
+                </div>
+
+                ${matrixHTML}
+            `;
+        }
+
+        function renderResultScreen() {
+            const p = appState.generatedPlayer;
+
+            // メインポジションバッジの色分け表示（11具体ポジション対応）
+            const posBadge = document.getElementById('resPosBadge');
+            const posMeta = POSITION_META[p.position] || POSITION_META.short;
+
+            posBadge.textContent = posMeta.label;
+            posBadge.className = `px-3 py-1 rounded-lg font-black text-sm sm:text-base shadow-md border-2 ${posMeta.colorCls}`;
+
+            // サブポジションバッジ表示
+            const subBadge = document.getElementById('resSubPosBadge');
+            if (p.subPositions && p.subPositions.length > 0) {
+                const subShortNames = p.subPositions.map(k => POSITION_META[k].label).join('・');
+                subBadge.textContent = `サブ：${subShortNames}`;
+                subBadge.classList.remove('hidden');
+            } else {
+                subBadge.classList.add('hidden');
+            }
+
+            // 新設した上部「守備位置・起用適性ビッグパネル」を描画
+            renderLargeAptitudePanel(p);
+
+            // 守備適性テキスト更新
+            const subText = (p.subPositions && p.subPositions.length > 0)
+                ? ` / ${p.subPositions.map(k => POSITION_META[k].short + '○').join('・')}`
+                : '（専任）';
+            document.getElementById('resPosAptitudeText').textContent = `${posMeta.label}◎${subText}`;
+
+            document.getElementById('resPlayerName').textContent = p.name;
+            document.getElementById('resJerseyNum').textContent = `#${p.jerseyNum}`;
+            document.getElementById('resHandBadge').textContent = p.hand;
+            document.getElementById('resTotalStar').textContent = p.starScore;
+
+            // プレイスタイルラベル更新
+            document.getElementById('resPlayStyleLabel').textContent = posMeta.roleDesc;
+            document.getElementById('resPitchStyleLabel').textContent = posMeta.isPitcher ? posMeta.label : '二刀流・投手適性';
+
+            // ★二刀流バッジ＆タブの表示制御（基本は野手か投手のどちらかのみ表示！）
+            const twoWayBadge = document.getElementById('resTwoWayBadge');
+            const fTabBtn = document.getElementById('tabBtnFielder');
+            const pTabBtn = document.getElementById('tabBtnPitcher');
+
+            if (p.isTwoWay) {
+                twoWayBadge.classList.remove('hidden');
+                fTabBtn.classList.remove('hidden');
+                pTabBtn.classList.remove('hidden');
+            } else if (p.isPitcher) {
+                // 投手専任：野手能力タブを隠す
+                twoWayBadge.classList.add('hidden');
+                fTabBtn.classList.add('hidden');
+                pTabBtn.classList.remove('hidden');
+            } else {
+                // 野手専任：投手能力タブを隠す
+                twoWayBadge.classList.add('hidden');
+                fTabBtn.classList.remove('hidden');
+                pTabBtn.classList.add('hidden');
+            }
+
+            // 弾道アイコン
+            document.getElementById('resTrajectoryNum').textContent = p.trajectory;
+            const trajAngles = { 1: -12, 2: -28, 3: -45, 4: -60 };
+            const trajColors = { 1: 'text-sky-400', 2: 'text-green-400', 3: 'text-yellow-400', 4: 'text-red-500' };
+            const angle = trajAngles[p.trajectory] || -35;
+            const colorCls = trajColors[p.trajectory] || 'text-yellow-400';
+            document.getElementById('resTrajectoryIcon').innerHTML = `
+                <svg class="w-8 h-8 ${colorCls} drop-shadow" style="transform: rotate(${angle}deg)" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2 10h13V6l7 6-7 6v-4H2z"/>
+                </svg>
+            `;
+
+            // 野手基礎能力6項目の描画
+            const fielderItems = [
+                { label: 'ミート', val: p.stats.meet },
+                { label: 'パワー', val: p.stats.power },
+                { label: '走力', val: p.stats.speed },
+                { label: '肩力', val: p.stats.arm },
+                { label: '守備力', val: p.stats.field },
+                { label: '捕球', val: p.stats.catch }
+            ];
+
+            const fContainer = document.getElementById('fielderStatRows');
+            fContainer.innerHTML = fielderItems.map(item => createStatRowHTML(item.label, item.val)).join('');
+
+            // 投手基礎能力の描画
+            document.getElementById('resPitchSpeed').textContent = p.stats.velo;
+            const pitcherItems = [
+                { label: 'コントロール', val: p.stats.ctrl },
+                { label: 'スタミナ', val: p.stats.stam }
+            ];
+            document.getElementById('pitcherStatRows').innerHTML = pitcherItems.map(item => createStatRowHTML(item.label, item.val)).join('');
+
+            // オリジナル変化球＆変化球ゲージ
+            document.getElementById('resOrigPitchName').textContent = p.origPitch.name;
+            document.getElementById('resOrigPitchDir').textContent = p.origPitch.dirText;
+
+            const bContainer = document.getElementById('breakingBallRows');
+            bContainer.innerHTML = p.pitches.map(pt => {
+                let pips = '';
+                for (let i = 1; i <= 7; i++) {
+                    pips += `<div class="pitch-pip ${i <= pt.level ? 'pitch-pip-active' : 'pitch-pip-empty'}"></div>`;
+                }
+                return `
+                    <div class="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 rounded-lg border border-blue-800/80 text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded bg-blue-800 text-yellow-300 font-black flex items-center justify-center">${pt.arrow}</span>
+                            <span class="font-extrabold text-white">${pt.name}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="flex gap-0.5">${pips}</div>
+                            <span class="w-4 text-right font-black text-yellow-300">${pt.level}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // 性癖バランス波形表記
+            document.getElementById('resSyncRate').textContent = p.balanceType;
+
+            // 性癖6大エレメント解析バーの描画
+            const elemContainer = document.getElementById('fetishElementBars');
+            const maxElemPossible = 34;
+            elemContainer.innerHTML = Object.keys(ELEMENT_META).map(ek => {
+                const meta = ELEMENT_META[ek];
+                const score = p.elem[ek] || 0;
+                const pct = Math.min(100, Math.round((score / maxElemPossible) * 100));
+                return `
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="w-32 font-extrabold text-blue-100 flex items-center gap-1 shrink-0">
+                            <span>${meta.icon}</span>
+                            <span>${meta.label}</span>
+                        </span>
+                        <div class="flex-grow h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
+                            <div class="h-full bg-gradient-to-r ${meta.color} rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                        </div>
+                        <span class="w-8 text-right font-black text-yellow-300">${score}pt</span>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('resBalanceBadge').textContent = p.balanceShort;
+            document.getElementById('resBalanceReason').textContent = p.balanceReasonText;
+
+            // 自動決定されたメインポジションが投手系（先発・中継ぎ・抑え）なら投手タブを初期表示
+            if (posMeta.isPitcher) {
+                switchStatTab('pitcher');
+            } else {
+                switchStatTab('fielder');
+            }
+
+            // 特殊能力パネルの描画
+            renderTokuPanel(p);
+
+            // スカウト寸評と選択ログ（全20問）
+            document.getElementById('resScoutHeadline').textContent = p.scoutData.headline;
+            document.getElementById('resFetishAxisBadge').textContent = `波形：${p.scoutData.axisLabel}`;
+            document.getElementById('resScoutReport').innerText = p.scoutData.report;
+
+            const tagsContainer = document.getElementById('resSelectedTags');
+            tagsContainer.innerHTML = p.chosenItems.map((c, i) => `
+                <span class="px-2.5 py-1 rounded-full bg-blue-900/90 border border-blue-400/50 text-[11px] font-bold text-blue-100 flex items-center gap-1">
+                    <span class="text-yellow-300 font-black">Q${i + 1}.</span>
+                    <span>${c.emoji}</span>
+                    <span>${c.shortTag}</span>
+                </span>
+            `).join('');
+        }
+
+        function createStatRowHTML(label, val) {
+            const rank = getRankLetter(val);
+            const barColors = {
+                S: 'from-pink-400 via-fuchsia-500 to-purple-600',
+                A: 'from-pink-400 to-rose-600',
+                B: 'from-red-400 to-red-600',
+                C: 'from-orange-300 to-orange-500',
+                D: 'from-yellow-300 to-amber-500',
+                E: 'from-green-400 to-emerald-600',
+                F: 'from-sky-400 to-blue-600',
+                G: 'from-gray-400 to-gray-600'
+            };
+            const barGrad = barColors[rank] || barColors.D;
+
+            return `
+                <div class="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 rounded-lg border border-blue-800/90">
+                    <span class="w-24 font-black text-xs sm:text-sm text-sky-200 shrink-0">${label}</span>
+                    <div class="flex items-center gap-2.5 flex-grow justify-end">
+                        <div class="w-20 sm:w-24 h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700 hidden sm:block">
+                            <div class="h-full bg-gradient-to-r ${barGrad} rounded-full" style="width: ${val}%"></div>
+                        </div>
+                        <span class="rank-badge rank-${rank}">${rank}</span>
+                        <span class="w-9 text-right font-black text-lg sm:text-xl text-white text-stroke-dark">${val}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchStatTab(tab) {
+            const mainGrid = document.getElementById('mainAbilityGrid');
+            const analysisSec = document.getElementById('analysisSection');
+            const fView = document.getElementById('viewFielderStats');
+            const pView = document.getElementById('viewPitcherStats');
+            const fBtn = document.getElementById('tabBtnFielder');
+            const pBtn = document.getElementById('tabBtnPitcher');
+            const aBtn = document.getElementById('tabBtnAnalysis');
+
+            const activeCls = 'px-2.5 sm:px-3 py-1.5 rounded-md transition bg-yellow-400 text-slate-950 shadow font-black';
+            const inactiveCls = 'px-2.5 sm:px-3 py-1.5 rounded-md transition text-blue-200 hover:text-white font-bold';
+
+            if (tab === 'fielder') {
+                mainGrid.classList.remove('hidden');
+                analysisSec.classList.remove('hidden');
+                fView.classList.remove('hidden');
+                pView.classList.add('hidden');
+                fBtn.className = activeCls;
+                pBtn.className = inactiveCls;
+                aBtn.className = inactiveCls;
+            } else if (tab === 'pitcher') {
+                mainGrid.classList.remove('hidden');
+                analysisSec.classList.remove('hidden');
+                fView.classList.add('hidden');
+                pView.classList.remove('hidden');
+                pBtn.className = activeCls;
+                fBtn.className = inactiveCls;
+                aBtn.className = inactiveCls;
+            } else if (tab === 'analysis') {
+                // 性癖バランス＆寸評タブ選択時は解析パネルを最上部にフォーカス表示
+                mainGrid.classList.add('hidden');
+                analysisSec.classList.remove('hidden');
+                aBtn.className = activeCls;
+                fBtn.className = inactiveCls;
+                pBtn.className = inactiveCls;
+            }
+        }
+
+        function renderTokuPanel(p) {
+            // 厳選された特殊能力（金特1個＋青特4〜5個＋青赤複合1個＋赤特1〜2個＋緑特1〜2個）を並べる
+            const seen = new Set();
+            const combined = [];
+
+            const addUnique = (item) => {
+                if (!item || seen.has(item.name)) return;
+                seen.add(item.name);
+                combined.push(item);
+            };
+
+            p.goldTokuList.forEach(addUnique);
+
+            const isPitcher = POSITION_META[p.position]?.isPitcher;
+            if (isPitcher) {
+                p.pitchBlueList.slice(0, 4).forEach(addUnique);
+                p.blueList.slice(0, 2).forEach(addUnique);
+            } else {
+                p.blueList.slice(0, 5).forEach(addUnique);
+            }
+
+            addUnique(p.mixToku);
+            p.redList.slice(0, 2).forEach(addUnique);
+            p.greenList.slice(0, 2).forEach(addUnique);
+
+            const finalToku = combined.slice(0, 11);
+            const grid = document.getElementById('tokuGrid');
+
+            const clsMap = {
+                gold: 'toku-gold',
+                blue: 'toku-blue',
+                red: 'toku-red',
+                mix: 'toku-mix',
+                green: 'toku-green'
+            };
+
+            grid.innerHTML = finalToku.map((t, idx) => `
+                <button type="button" onclick="showTokuDetail(${idx})" class="toku-badge ${clsMap[t.type] || 'toku-blue'}">
+                    <span>${t.name}</span>
+                </button>
+            `).join('');
+
+            // グローバル参照用に保存し、初期状態で1番目の金特を選択表示
+            appState.displayedToku = finalToku;
+            if (finalToku.length > 0) {
+                showTokuDetail(0);
+            }
+        }
+
+        function showTokuDetail(idx) {
+            const t = appState.displayedToku[idx];
+            if (!t) return;
+
+            const badgeEl = document.getElementById('tokuDetailTypeBadge');
+            const titleEl = document.getElementById('tokuDetailTitle');
+            const descEl = document.getElementById('tokuDetailDesc');
+
+            const typeConfig = {
+                gold: { label: '超特殊能力（金特）', cls: 'bg-yellow-400 text-slate-950' },
+                blue: { label: '特殊能力（青特）', cls: 'bg-sky-400 text-slate-950' },
+                red: { label: '弱点能力（赤特）', cls: 'bg-red-500 text-white' },
+                mix: { label: '性癖特有（青赤特）', cls: 'bg-purple-500 text-white' },
+                green: { label: 'プレイスタイル（緑特）', cls: 'bg-emerald-400 text-slate-950' }
+            }[t.type] || { label: '特殊能力', cls: 'bg-sky-400 text-slate-950' };
+
+            badgeEl.textContent = typeConfig.label;
+            badgeEl.className = `px-2 py-0.5 rounded text-[10px] font-black ${typeConfig.cls}`;
+            titleEl.textContent = t.name;
+            descEl.textContent = t.desc;
+        }
+
+        // =========================================================================
+        // 7. やり直し・テキストコピー機能
+        // =========================================================================
+        function resetToTitle() {
+            document.getElementById('screen-quiz').classList.add('hidden');
+            document.getElementById('screen-result').classList.add('hidden');
+            document.getElementById('screen-setup').classList.remove('hidden');
+            document.getElementById('topResetBtn').classList.add('hidden');
+        }
+
+        function copyResultText() {
+            const p = appState.generatedPlayer;
+            if (!p) return;
+
+            const s = p.stats;
+            const posMeta = POSITION_META[p.position] || POSITION_META.short;
+            const subPosStr = (p.subPositions && p.subPositions.length > 0)
+                ? `（サブ：${p.subPositions.map(k => POSITION_META[k].label).join('・')}）`
+                : '';
+            const tokuNames = (appState.displayedToku || []).map(t => `【${t.name}】`).join(' ');
+            const tags = p.chosenItems.map(c => c.shortTag).join(' / ');
+
+            let statLine = '';
+            if (p.isTwoWay) {
+                const pitchStr = p.pitches.map(pt => `${pt.name}${pt.level}`).join('・');
+                statLine = `【二刀流】弾道:${p.trajectory} ミ:${getRankLetter(s.meet)}(${s.meet}) パ:${getRankLetter(s.power)}(${s.power}) 走:${getRankLetter(s.speed)}(${s.speed}) 肩:${getRankLetter(s.arm)}(${s.arm}) 守:${getRankLetter(s.field)}(${s.field}) 捕:${getRankLetter(s.catch)}(${s.catch})\n` +
+                           `【投手】球速:${s.velo}km/h コン:${getRankLetter(s.ctrl)}(${s.ctrl}) スタ:${getRankLetter(s.stam)}(${s.stam}) / 変化球:${pitchStr}`;
+            } else if (p.isPitcher) {
+                const pitchStr = p.pitches.map(pt => `${pt.name}${pt.level}`).join('・');
+                statLine = `球速:${s.velo}km/h コン:${getRankLetter(s.ctrl)}(${s.ctrl}) スタ:${getRankLetter(s.stam)}(${s.stam})\n変化球: ${pitchStr} / 魔球:『${p.origPitch.name}』`;
+            } else {
+                statLine = `弾道:${p.trajectory} ミ:${getRankLetter(s.meet)}(${s.meet}) パ:${getRankLetter(s.power)}(${s.power}) 走:${getRankLetter(s.speed)}(${s.speed}) 肩:${getRankLetter(s.arm)}(${s.arm}) 守:${getRankLetter(s.field)}(${s.field}) 捕:${getRankLetter(s.catch)}(${s.catch})`;
+            }
+
+            const text =
+                `⚾ 実況パワフル性癖スカウト査定結果（全60問プール・動的20問）\n` +
+                `選手名：${p.name}（#${p.jerseyNum} / ${posMeta.label}${subPosStr} / ${p.hand} / ★${p.starScore}）\n` +
+                `${statLine}\n` +
+                `特殊能力：${tokuNames}\n` +
+                `選択フェチ（20問）：${tags}\n` +
+                `寸評：${p.scoutData.headline}`;
+
+            // iframe環境でも確実に動作するコピー処理
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast('選手データ＆スカウト寸評をコピーしました！');
+            } catch (err) {
+                showToast('コピーに失敗しました');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        function showToast(msg) {
+            const box = document.getElementById('toastBox');
+            document.getElementById('toastMessage').textContent = msg;
+            box.classList.remove('hidden');
+            setTimeout(() => {
+                box.classList.add('hidden');
+            }, 2600);
+        }
+    </script>
+</body>
+</html>
