@@ -1627,7 +1627,7 @@
                 ['meet', 'power', 'speed', 'arm', 'field', 'catch'].forEach(k => {
                     raw[k] = raw[k] * 0.78 + 56 * 0.22;
                 });
-                posScores.short += 7; posScores.second += 7; posScores.center += 6; posScores.starter += 6; posScores.catcher += 5;
+                posScores.short += 4; posScores.second += 4; posScores.center += 4; posScores.starter += 4; posScores.catcher += 2; posScores.third += 2; posScores.right += 2; posScores.left += 2; posScores.first += 1; posScores.reliever += 1;
 
                 balanceReasonText = `6つの性癖エレメントが偏りなく整った「博愛ユーティリティ波形」です。極端な弱点を作らない安定した査定となり、総合力が求められるセンターライン（遊撃・二塁・中堅・先発・捕手）に高い適性が表れました。`;
             }
@@ -1636,12 +1636,23 @@
             if (raw.velo >= 151 && raw.stam < 54) posScores.closer += 6;
             if (raw.ctrl >= 62 && raw.stam < 58) posScores.reliever += 6;
             if (raw.stam >= 62 && raw.ctrl >= 55) posScores.starter += 6;
+
             if (raw.speed >= 66 && raw.field >= 60) posScores.center += 5;
+            if (raw.speed >= 62 && raw.meet >= 58) posScores.left += 3;
             if (raw.arm >= 65 && raw.power >= 58) posScores.right += 5;
-            if (raw.power >= 65 && raw.field < 52) { posScores.first += 5; posScores.left += 5; }
+
+            if (raw.power >= 65 && raw.field < 52) { posScores.first += 5; posScores.left += 4; }
+            if (raw.power >= 62 && raw.arm >= 62) posScores.third += 4;
+
             if (raw.field >= 65 && raw.arm >= 60) posScores.short += 5;
-            if (raw.field >= 63 && raw.meet >= 60) posScores.second += 5;
-            if (raw.catch >= 66) posScores.catcher += 6;
+            if (raw.field >= 63 && raw.meet >= 60) posScores.second += 4;
+
+            // 捕手は条件を厳しめにして偏り防止
+            if (raw.catch >= 70 && raw.ctrl >= 58) posScores.catcher += 4;
+            // 微ランダム散布（同じ傾向でも守備位置が固定化しにくくなる）
+            Object.keys(posScores).forEach(k => {
+                posScores[k] += Math.random() * 1.6; // 0〜1.6
+            });
 
             // 11ポジションからメイン守備位置とサブ守備位置を決定
             const sortedPositions = Object.entries(posScores).sort((a, b) => b[1] - a[1]);
@@ -1665,14 +1676,14 @@
             const isTwoWay = (Math.abs(maxPitchScore - maxFieldScore) <= 1 && hasDualSynergy) || (Math.abs(maxPitchScore - maxFieldScore) === 0 && rareRoll);
 
             // サブポジション選出（基本はメインと同じ区分のみ。二刀流覚醒時のみ投打横断でサブ適性を付与）
-            const subThreshold = (balanceShort === '一点突破特化型') ? 0.85 : 0.72;
-            const maxSubCount = isTwoWay ? 2 : ((balanceShort === '一点突破特化型') ? 1 : 2);
+            const subThreshold = (balanceShort === '一点突破特化型') ? 0.74 : 0.62;
+            const maxSubCount = isTwoWay ? 3 : ((balanceShort === '一点突破特化型') ? 2 : 3);
 
             let subPosKeys = sortedPositions
                 .slice(1)
                 .filter(([k, sc]) => {
                     if (isMainPitcher) {
-                        return POSITION_META[k].isPitcher && sc >= topPosScore * 0.76;
+                        return POSITION_META[k].isPitcher && sc >= topPosScore * 0.68;
                     } else {
                         return !POSITION_META[k].isPitcher && sc >= topPosScore * subThreshold;
                     }
@@ -1855,7 +1866,7 @@
                 balanceShort,
                 balanceReasonText,
                 chosenItems,
-                goldTokuList[0],
+                goldTokuList[0] || { name: '金特なし（素質型）' },
                 mainPosKey,
                 subPosKeys,
                 isTwoWay
@@ -1899,6 +1910,11 @@
 
         // 金特（超特殊能力）の決定関数
         function determineGoldToku(stats, elem, topElemKey, balanceShort, chosenItems, mainPosKey) {
+            // 金特は付きにくくする（約35%程度）
+            const goldRollSeed = chosenItems.reduce((acc, c, i) => acc + ((c.title?.length || 0) * (i + 1)), 0);
+            const goldRoll = goldRollSeed % 100;
+            if (goldRoll >= 35) return [];
+
             const isPitcher = POSITION_META[mainPosKey]?.isPitcher;
 
             if (isPitcher) {
@@ -1938,7 +1954,7 @@
                     }
                 }
 
-                if (mainPosKey === 'catcher' || elem.care >= 20) {
+                if (mainPosKey === 'catcher') {
                     return [{
                         name: '球界の頭脳',
                         type: 'gold',
@@ -2536,7 +2552,6 @@
                 ? `（サブ：${p.subPositions.map(k => POSITION_META[k].label).join('・')}）`
                 : '';
             const tokuNames = (appState.displayedToku || []).map(t => `【${t.name}】`).join(' ');
-            const tags = p.chosenItems.map(c => c.shortTag).join(' / ');
 
             let statLine = '';
             if (p.isTwoWay) {
@@ -2555,7 +2570,6 @@
                 `選手名：${p.name}（#${p.jerseyNum} / ${posMeta.label}${subPosStr} / ${p.hand} / ★${p.starScore}）\n` +
                 `${statLine}\n` +
                 `特殊能力：${tokuNames}\n` +
-                `選択フェチ（20問）：${tags}\n` +
                 `寸評：${p.scoutData.headline}`;
 
             // iframe環境でも確実に動作するコピー処理
