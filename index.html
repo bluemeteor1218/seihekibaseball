@@ -1,0 +1,78 @@
+<script>
+/* 1) prevQuestion の境界バグ修正 */
+function prevQuestion() {
+    if (appState.currentStep > 0) {
+        // 先に1問戻る
+        appState.currentStep--;
+
+        // 戻った位置より後ろの設問だけ破棄（現在問は残す）
+        while (appState.selectedQuestions.length > appState.currentStep + 1) {
+            const removed = appState.selectedQuestions.pop();
+            if (removed) appState.usedQuestionIds.delete(removed.id);
+        }
+
+        // 回答も未来分を破棄して整合性を保つ
+        appState.answers = appState.answers.slice(0, appState.currentStep + 1);
+
+        renderQuizStep();
+    }
+}
+
+/* 2) コピー処理を Clipboard API 優先に改善（fallbackは維持） */
+async function copyResultText() {
+    const p = appState.generatedPlayer;
+    if (!p) return;
+
+    const s = p.stats;
+    const posMeta = POSITION_META[p.position] || POSITION_META.short;
+    const subPosStr = (p.subPositions && p.subPositions.length > 0)
+        ? `（サブ：${p.subPositions.map(k => POSITION_META[k].label).join('・')}）`
+        : '';
+    const tokuNames = (appState.displayedToku || []).map(t => `【${t.name}】`).join(' ');
+    const tags = p.chosenItems.map(c => c.shortTag).join(' / ');
+
+    let statLine = '';
+    if (p.isTwoWay) {
+        const pitchStr = p.pitches.map(pt => `${pt.name}${pt.level}`).join('・');
+        statLine = `【二刀流】弾道:${p.trajectory} ミ:${getRankLetter(s.meet)}(${s.meet}) パ:${getRankLetter(s.power)}(${s.power}) 走:${getRankLetter(s.speed)}(${s.speed}) 肩:${getRankLetter(s.arm)}(${s.arm}) 守:${getRankLetter(s.field)}(${s.field}) 捕:${getRankLetter(s.catch)}(${s.catch})\n` +
+                   `【投手】球速:${s.velo}km/h コン:${getRankLetter(s.ctrl)}(${s.ctrl}) スタ:${getRankLetter(s.stam)}(${s.stam}) / 変化球:${pitchStr}`;
+    } else if (p.isPitcher) {
+        const pitchStr = p.pitches.map(pt => `${pt.name}${pt.level}`).join('・');
+        statLine = `球速:${s.velo}km/h コン:${getRankLetter(s.ctrl)}(${s.ctrl}) スタ:${getRankLetter(s.stam)}(${s.stam})\n変化球: ${pitchStr} / 魔球:『${p.origPitch.name}』`;
+    } else {
+        statLine = `弾道:${p.trajectory} ミ:${getRankLetter(s.meet)}(${s.meet}) パ:${getRankLetter(s.power)}(${s.power}) 走:${getRankLetter(s.speed)}(${s.speed}) 肩:${getRankLetter(s.arm)}(${s.arm}) 守:${getRankLetter(s.field)}(${s.field}) 捕:${getRankLetter(s.catch)}(${s.catch})`;
+    }
+
+    const text =
+        `⚾ 実況パワフル性癖スカウト査定結果（全60問プール・動的20問）\n` +
+        `選手名：${p.name}（#${p.jerseyNum} / ${posMeta.label}${subPosStr} / ${p.hand} / ★${p.starScore}）\n` +
+        `${statLine}\n` +
+        `特殊能力：${tokuNames}\n` +
+        `選択フェチ（20問）：${tags}\n` +
+        `寸評：${p.scoutData.headline}`;
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            showToast('選手データ＆スカウト寸評をコピーしました！');
+            return;
+        }
+        throw new Error('Clipboard API unavailable');
+    } catch (_) {
+        // fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showToast('選手データ＆スカウト寸評をコピーしました！');
+        } catch (err) {
+            showToast('コピーに失敗しました');
+        }
+        document.body.removeChild(textarea);
+    }
+}
+</script>
