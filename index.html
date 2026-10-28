@@ -1485,6 +1485,11 @@
                 left: 0, center: 0, right: 0
             };
 
+            // 投手ロールの母数バランス補正（目標: 先発:中継ぎ:抑え ≒ 3:3:1）
+            posScores.starter += 3.0;
+            posScores.reliever += 3.0;
+            posScores.closer  += 1.0;
+
             let elem = { visual: 0, gap: 0, lead: 0, care: 0, thrill: 0, pure: 0 };
             let chosenItems = [];
             let blueList = [];
@@ -1633,9 +1638,12 @@
             }
 
             // 4. 能力値のバランス特徴から11ポジションの適性スコアを最終補正
-            if (raw.velo >= 151 && raw.stam < 54) posScores.closer += 6;
-            if (raw.ctrl >= 62 && raw.stam < 58) posScores.reliever += 6;
-            if (raw.stam >= 62 && raw.ctrl >= 55) posScores.starter += 6;
+            if (raw.stam >= 64 && raw.ctrl >= 56) posScores.starter += 5;
+            if (raw.ctrl >= 61 && raw.stam < 66) posScores.reliever += 5;
+
+            // 抑えは条件を厳格化（高球速＋高制球＋低スタミナ）
+            if (raw.velo >= 154 && raw.ctrl >= 64 && raw.stam <= 56) posScores.closer += 4;
+            if (raw.velo >= 156 && raw.ctrl >= 66 && raw.stam <= 54) posScores.closer += 2; // 上振れ時のみ追加
 
             if (raw.speed >= 66 && raw.field >= 60) posScores.center += 5;
             if (raw.speed >= 62 && raw.meet >= 58) posScores.left += 3;
@@ -1678,18 +1686,23 @@
             // サブポジション選出（基本はメインと同じ区分のみ。二刀流覚醒時のみ投打横断でサブ適性を付与）
             const subThreshold = (balanceShort === '一点突破特化型') ? 0.74 : 0.62;
             const maxSubCount = isTwoWay ? 3 : ((balanceShort === '一点突破特化型') ? 2 : 3);
+            const pitcherSubCap = 2; // 投手専任なら先発/中継ぎ/抑えのうち最大2つまでサブ付与
 
             let subPosKeys = sortedPositions
                 .slice(1)
                 .filter(([k, sc]) => {
                     if (isMainPitcher) {
-                        return POSITION_META[k].isPitcher && sc >= topPosScore * 0.68;
+                        return POSITION_META[k].isPitcher && sc >= topPosScore * 0.60;
                     } else {
                         return !POSITION_META[k].isPitcher && sc >= topPosScore * subThreshold;
                     }
                 })
                 .slice(0, maxSubCount)
                 .map(entry => entry[0]);
+            
+            if (!isTwoWay && isMainPitcher && subPosKeys.length > pitcherSubCap) {
+                subPosKeys = subPosKeys.slice(0, pitcherSubCap);
+            }
 
             // 二刀流の場合は反対区分のトップポジションもサブ適性に追加
             if (isTwoWay) {
